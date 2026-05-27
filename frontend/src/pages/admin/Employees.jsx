@@ -1,0 +1,537 @@
+import { useState, useEffect } from 'react';
+import { validateRequired, validateNumeric } from '../../utils/validators';
+import { formatDate } from '../../utils/dates';
+import {
+  giftAppGetEmployees,
+  giftAppCreateEmployee,
+  giftAppUpdateEmployee,
+  giftAppDeleteEmployee,
+  giftAppGetCampaigns,
+  giftAppImportEmployeesBeneficiaries,
+  USE_BACKEND,
+} from '../../api/giftAppService';
+import Modal from '../../components/Modal';
+import Toast, { useToast } from '../../components/Toast';
+import EmptyState from '../../components/EmptyState';
+import ConfirmDialog from '../../components/ConfirmDialog';
+
+const EMPTY_EMPLOYEE = {
+  campaignId: '',
+  fullName: '',
+  documentId: '',
+  email: '',
+  phone: '',
+  shippingCity: '',
+  shippingAddress: '',
+  status: 'PENDING',
+};
+
+export default function Employees() {
+  const [employees, setEmployees] = useState([]);
+  const [campaigns, setCampaigns] = useState([]);
+  const [search, setSearch] = useState('');
+  const [filterCampaign, setFilterCampaign] = useState('');
+  const [showModal, setShowModal] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [form, setForm] = useState(EMPTY_EMPLOYEE);
+  const [errors, setErrors] = useState({});
+  const { toasts, addToast, removeToast } = useToast();
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [loading, setLoading] = useState(USE_BACKEND);
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importFile, setImportFile] = useState(null);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState(null);
+
+  const loadData = async () => {
+    if (USE_BACKEND) setLoading(true);
+    try {
+      const [employeesData, campaignsData] = await Promise.all([
+        giftAppGetEmployees(),
+        giftAppGetCampaigns(),
+      ]);
+      setEmployees(employeesData);
+      setCampaigns(campaignsData);
+    } catch (err) {
+      if (USE_BACKEND) addToast(err.message || 'Error al cargar datos.', 'error');
+    } finally {
+      if (USE_BACKEND) setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const filtered = employees.filter((e) => {
+    const matchesSearch =
+      e.fullName.toLowerCase().includes(search.toLowerCase()) ||
+      e.documentId.includes(search) ||
+      e.email.toLowerCase().includes(search.toLowerCase()) ||
+      (e.phone || '').includes(search) ||
+      (e.shippingCity || '').toLowerCase().includes(search.toLowerCase()) ||
+      (e.shippingAddress || '').toLowerCase().includes(search.toLowerCase());
+    const matchesCampaign = !filterCampaign || String(e.campaignId) === filterCampaign;
+    return matchesSearch && matchesCampaign;
+  });
+
+  const openCreate = () => {
+    setEditing(null);
+    setForm({ ...EMPTY_EMPLOYEE, campaignId: campaigns[0]?.id || '' });
+    setErrors({});
+    setShowModal(true);
+  };
+
+  const openEdit = (emp) => {
+    setEditing(emp);
+    setForm({ ...emp });
+    setErrors({});
+    setShowModal(true);
+  };
+
+  const validate = () => {
+    const errs = {};
+    const nameErr = validateRequired(form.fullName, 'Nombre');
+    if (nameErr) errs.fullName = nameErr;
+    const idErr = validateRequired(form.documentId, 'ID');
+    if (idErr) errs.documentId = idErr;
+    else {
+      const numErr = validateNumeric(form.documentId, 'ID');
+      if (numErr) errs.documentId = numErr;
+    }
+    if (!form.campaignId) errs.campaignId = 'La campaña es obligatoria.';
+
+    if (!editing) {
+      const existing = employees.find(
+        (e) => e.documentId === form.documentId && String(e.campaignId) === String(form.campaignId)
+      );
+      if (existing) errs.documentId = 'El ID del empleado debe ser único dentro de la campaña.';
+    } else {
+      const existing = employees.find(
+        (e) =>
+          e.documentId === form.documentId &&
+          String(e.campaignId) === String(form.campaignId) &&
+          e.id !== editing.id
+      );
+      if (existing) errs.documentId = 'El ID del empleado debe ser único dentro de la campaña.';
+    }
+
+    setErrors(errs);
+    return Object.keys(errs).length === 0;
+  };
+
+  const handleSave = async () => {
+    if (!validate()) return;
+
+    setSaving(true);
+    try {
+      if (editing) {
+        await giftAppUpdateEmployee(editing.id, form);
+      } else {
+        await giftAppCreateEmployee(form);
+      }
+      await loadData();
+      setShowModal(false);
+      addToast(editing ? 'Empleado actualizado.' : 'Empleado creado.');
+    } catch (err) {
+      addToast(err.message || 'Error al guardar el empleado.', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+
+    setDeleting(true);
+    try {
+      await giftAppDeleteEmployee(deleteTarget.id);
+      await loadData();
+      setDeleteTarget(null);
+      addToast('Empleado eliminado.');
+    } catch (err) {
+      addToast(err.message, 'error');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const getCampaignName = (id) => {
+    return campaigns.find((c) => String(c.id) === String(id))?.name || id;
+  };
+
+  const openImportModal = () => {
+    setImportFile(null);
+    setImportResult(null);
+    setShowImportModal(true);
+  };
+
+  const closeImportModal = () => {
+    setShowImportModal(false);
+    setImportFile(null);
+    setImportResult(null);
+  };
+
+  const handleImportFileChange = (e) => {
+    const file = e.target.files?.[0];
+    if (file && !file.name.endsWith('.xlsx')) {
+      addToast('Solo se permiten archivos .xlsx.', 'error');
+      e.target.value = '';
+      return;
+    }
+    setImportFile(file || null);
+    setImportResult(null);
+  };
+
+  const handleImport = async () => {
+    if (!importFile) return;
+
+    setImporting(true);
+    try {
+      const result = await giftAppImportEmployeesBeneficiaries(importFile);
+      setImportResult(result);
+      await loadData();
+      addToast('Importación completada con éxito.');
+    } catch (err) {
+      addToast(err.message || 'Error en la importación.', 'error');
+      setImportResult(null);
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const updateField = (field, value) => {
+    setForm((prev) => ({ ...prev, [field]: value }));
+    setErrors((prev) => ({ ...prev, [field]: '' }));
+  };
+
+  if (USE_BACKEND && loading) {
+    return (
+      <div>
+        <div className="admin-topbar"><h1>Empleados</h1></div>
+        <div className="admin-body">
+          <p style={{ color: 'var(--gray-500)', fontSize: '0.9375rem' }}>
+            Cargando empleados...
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="admin-topbar">
+        <h1>Empleados</h1>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {USE_BACKEND ? (
+            <button className="btn btn-outline btn-sm" onClick={openImportModal}>
+              Importar Excel
+            </button>
+          ) : (
+            <button
+              className="btn btn-outline btn-sm"
+              disabled
+              title="La importación desde Excel solo está disponible en modo backend."
+              style={{ cursor: 'not-allowed', opacity: 0.6 }}
+            >
+              Importar Excel
+            </button>
+          )}
+          <button className="btn btn-primary btn-sm" onClick={openCreate}>
+            + Nuevo Empleado
+          </button>
+        </div>
+      </div>
+      <div className="admin-body">
+        <div className="search-bar">
+          <input
+            type="text"
+            placeholder="Buscar por nombre, ID o correo..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+          <select
+            value={filterCampaign}
+            onChange={(e) => setFilterCampaign(e.target.value)}
+          >
+            <option value="">Todas las Campañas</option>
+            {campaigns.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {filtered.length === 0 ? (
+          <EmptyState title="Sin empleados" message="Agrega tu primer empleado." />
+        ) : (
+          <div className="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th>Nombre</th>
+                  <th>ID</th>
+                  <th>Correo</th>
+                  <th>Teléfono</th>
+                  <th>Ciudad</th>
+                  <th>Campaña</th>
+                  <th>Estado</th>
+                  <th>Creado</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((e) => (
+                  <tr key={e.id}>
+                    <td style={{ fontWeight: 500 }}>{e.fullName}</td>
+                    <td>{e.documentId}</td>
+                    <td>{e.email}</td>
+                    <td>{e.phone || ''}</td>
+                    <td>{e.shippingCity || ''}</td>
+                    <td>{getCampaignName(e.campaignId)}</td>
+                    <td>
+                      <span className={`badge badge-${e.status.toLowerCase().replace('_', '-')}`}>
+                        {e.status === 'PENDING' ? 'Pendiente' : e.status === 'IN_PROGRESS' ? 'En Progreso' : e.status === 'CONFIRMED' ? 'Confirmado' : 'Bloqueado'}
+                      </span>
+                    </td>
+                    <td>{formatDate(e.createdAt)}</td>
+                    <td>
+                      <div style={{ display: 'flex', gap: 4 }}>
+                        <button
+                          className="btn btn-outline btn-sm"
+                          onClick={() => openEdit(e)}
+                        >
+                          Editar
+                        </button>
+                        <button
+                          className="btn btn-danger btn-sm"
+                          onClick={() => setDeleteTarget(e)}
+                        >
+                          Eliminar
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      <Modal
+        isOpen={showModal}
+        onClose={() => setShowModal(false)}
+        title={editing ? 'Editar Empleado' : 'Nuevo Empleado'}
+        footer={
+          <>
+            <button className="btn btn-outline" onClick={() => setShowModal(false)} disabled={saving}>
+              Cancelar
+            </button>
+            <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
+              {saving ? 'Guardando...' : editing ? 'Actualizar' : 'Crear'}
+            </button>
+          </>
+        }
+      >
+        <div className="form-group">
+          <label>Campaña</label>
+          <select
+            value={form.campaignId}
+            onChange={(e) => updateField('campaignId', e.target.value)}
+          >
+            <option value="">Seleccionar campaña</option>
+            {campaigns.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+          {errors.campaignId && <p className="form-error">{errors.campaignId}</p>}
+        </div>
+        <div className="form-group">
+          <label>Nombre Completo</label>
+          <input
+            value={form.fullName}
+            onChange={(e) => updateField('fullName', e.target.value)}
+          />
+          {errors.fullName && <p className="form-error">{errors.fullName}</p>}
+        </div>
+        <div className="form-group">
+          <label>Número de Identificación</label>
+          <input
+            value={form.documentId}
+            onChange={(e) => updateField('documentId', e.target.value)}
+            placeholder="ej. 1001"
+          />
+          {errors.documentId && <p className="form-error">{errors.documentId}</p>}
+        </div>
+        <div className="form-group">
+          <label>Correo</label>
+          <input
+            type="email"
+            value={form.email}
+            onChange={(e) => updateField('email', e.target.value)}
+          />
+        </div>
+        <div className="form-group">
+          <label>Teléfono</label>
+          <input
+            type="text"
+            value={form.phone || ''}
+            onChange={(e) => updateField('phone', e.target.value)}
+            placeholder="Ej. 3001234567"
+          />
+        </div>
+        <div className="form-group">
+          <label>Ciudad</label>
+          <input
+            type="text"
+            value={form.shippingCity || ''}
+            onChange={(e) => updateField('shippingCity', e.target.value)}
+            placeholder="Ej. Bogotá"
+          />
+        </div>
+        <div className="form-group">
+          <label>Dirección de Envío</label>
+          <input
+            type="text"
+            value={form.shippingAddress || ''}
+            onChange={(e) => updateField('shippingAddress', e.target.value)}
+            placeholder="Ej. Calle 10 # 20-30"
+          />
+        </div>
+        <div className="form-group">
+          <label>Estado</label>
+          <select
+            value={form.status}
+            onChange={(e) => updateField('status', e.target.value)}
+          >
+            <option value="PENDING">Pendiente</option>
+            <option value="IN_PROGRESS">En Progreso</option>
+            <option value="CONFIRMED">Confirmado</option>
+            <option value="BLOCKED">Bloqueado</option>
+          </select>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={showImportModal}
+        onClose={closeImportModal}
+        title="Importar Empleados y Beneficiarios"
+        footer={
+          !importResult ? (
+            <>
+              <button className="btn btn-outline" onClick={closeImportModal} disabled={importing}>
+                Cancelar
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={handleImport}
+                disabled={!importFile || importing}
+              >
+                {importing ? 'Importando empleados...' : 'Cargar Archivo'}
+              </button>
+            </>
+          ) : (
+            <button className="btn btn-primary" onClick={closeImportModal}>
+              Cerrar
+            </button>
+          )
+        }
+      >
+        {!importResult ? (
+          <div>
+            <p style={{ marginBottom: 12, color: 'var(--gray-600)', fontSize: '0.9375rem' }}>
+              Selecciona un archivo Excel (.xlsx) con la información de empleados y beneficiarios para importar.
+            </p>
+            <div className="form-group">
+              <label>Archivo Excel</label>
+              <input
+                type="file"
+                accept=".xlsx"
+                onChange={handleImportFileChange}
+                disabled={importing}
+                key={importFile ? importFile.name : 'empty'}
+              />
+            </div>
+            {importing && (
+              <p style={{ textAlign: 'center', marginTop: 12, color: 'var(--gray-500)' }}>
+                Importando empleados...
+              </p>
+            )}
+          </div>
+        ) : (
+          <div>
+            <p style={{ marginBottom: 12, fontWeight: 500, color: 'var(--success, #16a34a)' }}>
+              Importación completada
+            </p>
+            <table style={{ width: '100%', fontSize: '0.875rem' }}>
+              <tbody>
+                <tr>
+                  <td style={{ padding: '4px 8px', color: 'var(--gray-500)' }}>Total de filas</td>
+                  <td style={{ padding: '4px 8px', fontWeight: 600 }}>{importResult.totalRows}</td>
+                </tr>
+                <tr>
+                  <td style={{ padding: '4px 8px', color: 'var(--gray-500)' }}>Empleados creados</td>
+                  <td style={{ padding: '4px 8px', fontWeight: 600, color: 'var(--success, #16a34a)' }}>{importResult.employeesCreated}</td>
+                </tr>
+                <tr>
+                  <td style={{ padding: '4px 8px', color: 'var(--gray-500)' }}>Empleados actualizados</td>
+                  <td style={{ padding: '4px 8px', fontWeight: 600, color: '#2563eb' }}>{importResult.employeesUpdated}</td>
+                </tr>
+                <tr>
+                  <td style={{ padding: '4px 8px', color: 'var(--gray-500)' }}>Beneficiarios creados</td>
+                  <td style={{ padding: '4px 8px', fontWeight: 600, color: 'var(--success, #16a34a)' }}>{importResult.beneficiariesCreated}</td>
+                </tr>
+                <tr>
+                  <td style={{ padding: '4px 8px', color: 'var(--gray-500)' }}>Filas omitidas</td>
+                  <td style={{ padding: '4px 8px', fontWeight: 600 }}>{importResult.skippedRows}</td>
+                </tr>
+                {importResult.errors && importResult.errors.length > 0 && (
+                  <tr>
+                    <td style={{ padding: '4px 8px', color: 'var(--danger, #dc2626)', verticalAlign: 'top' }}>Errores</td>
+                    <td style={{ padding: '4px 8px' }}>
+                      {importResult.errors.map((e, i) => (
+                        <div key={i} style={{ color: 'var(--danger, #dc2626)', fontSize: '0.8125rem', marginBottom: 2 }}>
+                          Fila {e.row}: {e.message}
+                        </div>
+                      ))}
+                    </td>
+                  </tr>
+                )}
+                {importResult.warnings && importResult.warnings.length > 0 && (
+                  <tr>
+                    <td style={{ padding: '4px 8px', color: '#d97706', verticalAlign: 'top' }}>Advertencias</td>
+                    <td style={{ padding: '4px 8px' }}>
+                      {importResult.warnings.map((w, i) => (
+                        <div key={i} style={{ color: '#d97706', fontSize: '0.8125rem', marginBottom: 2 }}>
+                          Fila {w.row}: {w.message}
+                        </div>
+                      ))}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Modal>
+
+      <ConfirmDialog
+        isOpen={!!deleteTarget}
+        title="Eliminar Empleado"
+        message={`¿Estás seguro de que deseas eliminar a "${deleteTarget?.fullName}"?`}
+        confirmText="Eliminar"
+        danger
+        loading={deleting}
+        onConfirm={handleDelete}
+        onCancel={() => setDeleteTarget(null)}
+      />
+      <Toast toasts={toasts} onRemove={removeToast} />
+    </div>
+  );
+}

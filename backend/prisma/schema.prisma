@@ -1,0 +1,430 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ── Auth & Users ──────────────────────────────────────────
+
+model Role {
+  id          Int          @id @default(autoincrement())
+  name        String       @unique @db.VarChar(50)
+  description String?      @db.VarChar(255)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  adminUsers  AdminUser[]
+}
+
+model AdminUser {
+  id               Int        @id @default(autoincrement())
+  name             String     @db.VarChar(120)
+  email            String     @unique @db.VarChar(180)
+  password         String     @db.VarChar(255)
+  roleId           Int
+  role             Role       @relation(fields: [roleId], references: [id])
+  isActive         Boolean    @default(true)
+  campaignsCreated Campaign[] @relation("CampaignsCreated")
+  campaignsUpdated Campaign[] @relation("CampaignsUpdated")
+  employeesCreated  Employee[] @relation("EmployeesCreated")
+  employeesUpdated  Employee[] @relation("EmployeesUpdated")
+  beneficiariesCreated Beneficiary[] @relation("BeneficiariesCreated")
+  beneficiariesUpdated Beneficiary[] @relation("BeneficiariesUpdated")
+  giftsCreated         Gift[]        @relation("GiftsCreated")
+  giftsUpdated         Gift[]        @relation("GiftsUpdated")
+  supportResolved      SupportRequest[] @relation("SupportRequestsResolved")
+  historyChanges       SupportRequestHistory[] @relation("SupportRequestHistoryChanges")
+  selectionsCancelled  Selection[] @relation("SelectionsCancelled")
+  stockMovementsCreated StockMovement[] @relation("StockMovementsCreated")
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+
+  @@index([email])
+  @@index([roleId])
+}
+
+// ── Campaigns ────────────────────────────────────────────
+
+enum CampaignStatus {
+  ACTIVE
+  CLOSED
+  DRAFT
+  PAUSED
+  ARCHIVED
+}
+
+model Campaign {
+  id            Int             @id @default(autoincrement())
+  name          String          @db.VarChar(180)
+  slug          String          @unique @db.VarChar(200)
+  welcomeText   String?         @db.Text
+  rulesText     String?         @db.Text
+  status        CampaignStatus  @default(ACTIVE)
+  logoText      String?         @db.VarChar(80)
+  primaryColor  String?         @db.VarChar(7)
+  startsAt      DateTime?
+  endsAt        DateTime?
+  createdById   Int?
+  createdBy     AdminUser?      @relation("CampaignsCreated", fields: [createdById], references: [id])
+  updatedById   Int?
+  updatedBy     AdminUser?      @relation("CampaignsUpdated", fields: [updatedById], references: [id])
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  deletedAt     DateTime?
+  employees     Employee[]
+  gifts         Gift[]
+  supportRequests SupportRequest[]
+  selections     Selection[]
+  stockMovements StockMovement[]
+  emailLogs      EmailLog[]
+  selectionItems SelectionItem[]
+
+  @@index([slug])
+  @@index([status])
+  @@index([deletedAt])
+}
+
+// ── Employees ────────────────────────────────────────────
+
+enum EmployeeStatus {
+  PENDING
+  IN_PROGRESS
+  CONFIRMED
+  BLOCKED
+}
+
+model Employee {
+  id          Int            @id @default(autoincrement())
+  campaignId  Int
+  campaign    Campaign       @relation(fields: [campaignId], references: [id])
+  fullName    String         @db.VarChar(180)
+  documentId  String         @db.VarChar(50)
+  email           String?        @db.VarChar(180)
+  phone           String?        @db.VarChar(30)
+  shippingAddress String?        @db.VarChar(255)
+  shippingCity    String?        @db.VarChar(100)
+  status          EmployeeStatus @default(PENDING)
+  confirmedAt DateTime?
+  createdById Int?
+  createdBy   AdminUser?     @relation("EmployeesCreated", fields: [createdById], references: [id])
+  updatedById Int?
+  updatedBy   AdminUser?     @relation("EmployeesUpdated", fields: [updatedById], references: [id])
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  deletedAt   DateTime?
+
+  @@unique([campaignId, documentId])
+  @@index([campaignId])
+  @@index([status])
+  @@index([documentId])
+  @@index([deletedAt])
+
+  beneficiaries Beneficiary[]
+  supportRequests SupportRequest[]
+  selections       Selection[]
+  selectionItems   SelectionItem[]
+  emailLogs        EmailLog[]
+}
+
+// ── Beneficiaries ────────────────────────────────────────
+
+enum Gender {
+  male
+  female
+}
+
+model Beneficiary {
+  id          Int       @id @default(autoincrement())
+  employeeId  Int
+  employee    Employee  @relation(fields: [employeeId], references: [id])
+  fullName    String    @db.VarChar(180)
+  age         Int       @default(0)
+  gender      Gender    @default(male)
+  createdById Int?
+  createdBy   AdminUser? @relation("BeneficiariesCreated", fields: [createdById], references: [id])
+  updatedById Int?
+  updatedBy   AdminUser? @relation("BeneficiariesUpdated", fields: [updatedById], references: [id])
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  @@index([employeeId])
+  @@index([gender])
+  @@index([deletedAt])
+
+  selectionItems SelectionItem[]
+}
+
+// ── Gifts ────────────────────────────────────────────────
+
+enum GiftAllowedGender {
+  all
+  male
+  female
+}
+
+enum GiftStatus {
+  ACTIVE
+  INACTIVE
+}
+
+model Gift {
+  id                   Int               @id @default(autoincrement())
+  campaignId           Int
+  campaign             Campaign          @relation(fields: [campaignId], references: [id])
+  name                 String            @db.VarChar(180)
+  reference            String            @db.VarChar(50)
+  shortDescription     String?           @db.Text
+  technicalDescription String?           @db.Text
+  dimensions           String?           @db.VarChar(100)
+  stock                Int               @default(0)
+  minAge               Int               @default(0)
+  maxAge               Int               @default(13)
+  allowedGender        GiftAllowedGender @default(all)
+  status               GiftStatus        @default(ACTIVE)
+  createdById          Int?
+  createdBy            AdminUser?        @relation("GiftsCreated", fields: [createdById], references: [id])
+  updatedById          Int?
+  updatedBy            AdminUser?        @relation("GiftsUpdated", fields: [updatedById], references: [id])
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+  deletedAt            DateTime?
+  images               GiftImage[]
+  selectionItems       SelectionItem[]
+  stockMovements       StockMovement[]
+
+  @@unique([campaignId, reference])
+  @@index([campaignId])
+  @@index([status])
+  @@index([allowedGender])
+  @@index([deletedAt])
+}
+
+model GiftImage {
+  id         Int      @id @default(autoincrement())
+  giftId     Int
+  gift       Gift     @relation(fields: [giftId], references: [id], onDelete: Cascade)
+  imageUrl   String   @db.VarChar(500)
+  altText    String?  @db.VarChar(180)
+  sortOrder  Int      @default(0)
+  isPrimary  Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  @@index([giftId])
+  @@index([sortOrder])
+}
+
+// ── Planned: Selections ───────────────────────────────────
+// Selection {
+//   id              Int
+//   campaignId      Int      (FK → Campaign)
+//   employeeId      Int      (FK → Employee)
+//   beneficiaryId   Int      (FK → Beneficiary)
+//   giftId          Int      (FK → Gift)
+//   giftSnapshot    Json?
+//   confirmedAt     DateTime
+//   createdAt       DateTime
+// }
+
+// ── Support Requests ─────────────────────────────────────
+
+enum SupportType {
+  NOT_FOUND
+  BENEFICIARY_DATA_INCORRECT
+  MISSING_BENEFICIARY
+  AGE_GENDER_INCORRECT
+  GIFT_SELECTION_PROBLEM
+  OTHER
+}
+
+enum SupportStatus {
+  OPEN
+  IN_REVIEW
+  RESOLVED
+  CLOSED
+  REJECTED
+}
+
+model SupportRequest {
+  id                Int                    @id @default(autoincrement())
+  campaignId        Int?
+  campaign          Campaign?              @relation(fields: [campaignId], references: [id])
+  employeeId        Int?
+  employee          Employee?              @relation(fields: [employeeId], references: [id])
+  documentId        String?                @db.VarChar(50)
+  type              SupportType
+  message           String                 @db.Text
+  status            SupportStatus          @default(OPEN)
+  internalNote      String?                @db.Text
+  verifiedEmployee  Boolean                @default(false)
+  resolvedAt        DateTime?
+  resolvedById      Int?
+  resolvedBy        AdminUser?             @relation("SupportRequestsResolved", fields: [resolvedById], references: [id])
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+  history           SupportRequestHistory[]
+
+  @@index([campaignId])
+  @@index([employeeId])
+  @@index([status])
+  @@index([type])
+  @@index([documentId])
+  @@index([createdAt])
+
+  emails EmailLog[]
+}
+
+model SupportRequestHistory {
+  id                   Int            @id @default(autoincrement())
+  supportRequestId     Int
+  supportRequest       SupportRequest @relation(fields: [supportRequestId], references: [id], onDelete: Cascade)
+  previousStatus       SupportStatus?
+  newStatus            SupportStatus
+  previousInternalNote String?        @db.Text
+  newInternalNote      String?        @db.Text
+  changedById          Int?
+  changedBy            AdminUser?     @relation("SupportRequestHistoryChanges", fields: [changedById], references: [id])
+  changedAt            DateTime       @default(now())
+
+  @@index([supportRequestId])
+}
+
+// ── Selections ───────────────────────────────────────────
+
+enum SelectionStatus {
+  CONFIRMED
+  CANCELLED
+}
+
+model Selection {
+  id                         Int              @id @default(autoincrement())
+  campaignId                 Int
+  campaign                   Campaign         @relation(fields: [campaignId], references: [id])
+  employeeId                 Int
+  employee                   Employee         @relation(fields: [employeeId], references: [id])
+  status                     SelectionStatus  @default(CONFIRMED)
+  confirmedAt                DateTime         @default(now())
+  cancelledAt                DateTime?
+  cancelledById              Int?
+  cancelledBy                AdminUser?       @relation("SelectionsCancelled", fields: [cancelledById], references: [id])
+  cancellationReason         String?          @db.VarChar(500)
+  employeeNameSnapshot       String           @db.VarChar(180)
+  employeeDocumentIdSnapshot String           @db.VarChar(50)
+  campaignNameSnapshot       String           @db.VarChar(180)
+  createdAt                  DateTime         @default(now())
+  items                      SelectionItem[]
+  emailLogs                  EmailLog[]
+
+  @@unique([campaignId, employeeId])
+  @@index([campaignId])
+  @@index([employeeId])
+  @@index([status])
+  @@index([confirmedAt])
+}
+
+model SelectionItem {
+  id                       Int       @id @default(autoincrement())
+  selectionId              Int
+  selection                Selection @relation(fields: [selectionId], references: [id], onDelete: Cascade)
+  campaignId               Int
+  campaign                 Campaign  @relation(fields: [campaignId], references: [id])
+  employeeId               Int
+  employee                 Employee  @relation(fields: [employeeId], references: [id])
+  beneficiaryId            Int
+  beneficiary              Beneficiary @relation(fields: [beneficiaryId], references: [id])
+  giftId                   Int
+  gift                     Gift      @relation(fields: [giftId], references: [id])
+  beneficiaryNameSnapshot  String    @db.VarChar(180)
+  beneficiaryAgeSnapshot   Int
+  beneficiaryGenderSnapshot String   @db.VarChar(10)
+  giftNameSnapshot         String    @db.VarChar(180)
+  giftReferenceSnapshot    String    @db.VarChar(50)
+  giftImageUrlSnapshot     String?   @db.VarChar(500)
+  confirmedAt              DateTime  @default(now())
+  stockMovements           StockMovement[]
+
+  @@unique([selectionId, beneficiaryId])
+  @@index([selectionId])
+  @@index([campaignId])
+  @@index([employeeId])
+  @@index([beneficiaryId])
+  @@index([giftId])
+}
+
+// ── Stock Movements ──────────────────────────────────────
+
+enum StockMovementType {
+  SELECTION_CONFIRMATION
+  ADMIN_ADJUSTMENT
+  RESTOCK
+  CORRECTION
+}
+
+model StockMovement {
+  id              Int                @id @default(autoincrement())
+  giftId          Int
+  gift            Gift               @relation(fields: [giftId], references: [id])
+  campaignId      Int
+  campaign        Campaign           @relation(fields: [campaignId], references: [id])
+  selectionItemId Int?
+  selectionItem   SelectionItem?     @relation(fields: [selectionItemId], references: [id])
+  movementType    StockMovementType
+  quantityChange  Int
+  previousStock   Int
+  newStock        Int
+  reason          String?            @db.VarChar(500)
+  createdById     Int?
+  createdBy       AdminUser?         @relation("StockMovementsCreated", fields: [createdById], references: [id])
+  createdAt       DateTime           @default(now())
+
+  @@index([giftId])
+  @@index([campaignId])
+  @@index([selectionItemId])
+  @@index([movementType])
+  @@index([createdAt])
+}
+
+// ── Email Logs ───────────────────────────────────────────
+
+enum EmailType {
+  CONFIRMATION
+  SUPPORT_NOTIFICATION
+  ADMIN_NOTIFICATION
+  OTHER
+}
+
+enum EmailStatus {
+  SIMULATED
+  PENDING
+  SENT
+  FAILED
+}
+
+model EmailLog {
+  id                 Int          @id @default(autoincrement())
+  campaignId         Int?
+  campaign           Campaign?    @relation(fields: [campaignId], references: [id])
+  employeeId         Int?
+  employee           Employee?    @relation(fields: [employeeId], references: [id])
+  selectionId        Int?
+  selection          Selection?   @relation(fields: [selectionId], references: [id])
+  supportRequestId   Int?
+  supportRequest     SupportRequest? @relation(fields: [supportRequestId], references: [id])
+  recipientEmail     String?      @db.VarChar(180)
+  emailType          EmailType
+  status             EmailStatus  @default(SIMULATED)
+  subject            String?      @db.VarChar(255)
+  details            String?      @db.Text
+  providerMessageId  String?      @db.VarChar(255)
+  sentAt             DateTime?
+  createdAt          DateTime     @default(now())
+
+  @@index([campaignId])
+  @@index([employeeId])
+  @@index([selectionId])
+  @@index([supportRequestId])
+  @@index([emailType])
+  @@index([status])
+}
