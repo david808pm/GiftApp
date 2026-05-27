@@ -163,18 +163,19 @@ export class ImportsService {
         continue;
       }
 
-      const beneficiaryAge = parseInt(String(beneficiaryAgeRaw), 10);
+      const ageNum = Number(beneficiaryAgeRaw);
       if (
-        isNaN(beneficiaryAge) ||
-        beneficiaryAge < 0 ||
-        beneficiaryAge > 13
+        !Number.isInteger(ageNum) ||
+        ageNum < 0 ||
+        ageNum > 13
       ) {
         errors.push({
           row: excelRow,
-          message: 'La edad del beneficiario debe estar entre 0 y 13.',
+          message: 'La edad del beneficiario debe ser un número entero entre 0 y 13.',
         });
         continue;
       }
+      const beneficiaryAge = ageNum;
 
       const beneficiaryGender = normalizeGender(beneficiaryGenderRaw);
       if (!beneficiaryGender) {

@@ -165,6 +165,13 @@ export default function EmployeeLogin() {
     <div className="page-wrapper" style={{ '--primary': campaign.primaryColor || '#2563eb' }}>
       <header className="page-header">
         <div className="container">
+          {campaign.logoImageUrl && (
+            <img
+              src={campaign.logoImageUrl}
+              alt={campaign.logoText || campaign.name}
+              style={{ maxHeight: 44, maxWidth: 160, marginRight: 12, objectFit: 'contain' }}
+            />
+          )}
           <span className="logo">{campaign.logoText || 'REGALOS'}</span>
           <span style={{ color: 'var(--gray-500)', fontSize: '0.875rem' }}>
             {campaign.name}

@@ -248,6 +248,13 @@ export default function BeneficiarySelection() {
       <div className="page-wrapper">
         <header className="page-header">
           <div className="container">
+            {campaign.logoImageUrl && (
+              <img
+                src={campaign.logoImageUrl}
+                alt={campaign.logoText || campaign.name}
+                style={{ maxHeight: 44, maxWidth: 160, marginRight: 12, objectFit: 'contain' }}
+              />
+            )}
             <span className="logo">{campaign.logoText || 'REGALOS'}</span>
             <span style={{ color: 'var(--gray-500)', fontSize: '0.875rem' }}>
               {campaign.name}
@@ -332,6 +339,13 @@ export default function BeneficiarySelection() {
     <div className="page-wrapper" style={{ '--primary': campaign.primaryColor || '#2563eb' }}>
       <header className="page-header">
         <div className="container">
+          {campaign.logoImageUrl && (
+            <img
+              src={campaign.logoImageUrl}
+              alt={campaign.logoText || campaign.name}
+              style={{ maxHeight: 44, maxWidth: 160, marginRight: 12, objectFit: 'contain' }}
+            />
+          )}
           <span className="logo">{campaign.logoText || 'REGALOS'}</span>
           <span style={{ color: 'var(--gray-500)', fontSize: '0.875rem' }}>
             {campaign.name}
@@ -349,6 +363,19 @@ export default function BeneficiarySelection() {
             Selecciona un regalo para cada uno.
           </p>
         </div>
+
+        {campaign.welcomeText && (
+          <div className="card" style={{ marginBottom: 16, background: 'var(--gray-50)', borderLeft: `4px solid ${campaign.primaryColor || '#2563eb'}` }}>
+            <p style={{ fontSize: '0.9375rem', whiteSpace: 'pre-wrap' }}>{campaign.welcomeText}</p>
+          </div>
+        )}
+
+        {campaign.rulesText && (
+          <div className="card" style={{ marginBottom: 24 }}>
+            <h3 style={{ marginBottom: 8, fontSize: '0.9375rem', color: 'var(--gray-700)' }}>Instrucciones</h3>
+            <p style={{ fontSize: '0.875rem', color: 'var(--gray-600)', whiteSpace: 'pre-wrap' }}>{campaign.rulesText}</p>
+          </div>
+        )}
 
         <div className="tabs">
           {beneficiaries.map((b, i) => (

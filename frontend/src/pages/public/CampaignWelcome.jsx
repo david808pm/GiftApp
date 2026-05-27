@@ -68,6 +68,9 @@ export default function CampaignWelcome() {
     return (
       <div className="welcome-page">
         <div className="welcome-card">
+          {campaign.logoImageUrl && (
+            <img src={campaign.logoImageUrl} alt={campaign.logoText || campaign.name} style={{ maxHeight: 80, maxWidth: 200, marginBottom: 16, objectFit: 'contain' }} />
+          )}
           <div className="logo-text">{campaign.logoText || 'REGALOS'}</div>
           <h1>{campaign.name}</h1>
           <p>Esta campaña no está disponible actualmente.</p>
@@ -79,6 +82,9 @@ export default function CampaignWelcome() {
   return (
     <div className="welcome-page" style={{ '--primary': campaign.primaryColor || '#2563eb' }}>
       <div className="welcome-card">
+        {campaign.logoImageUrl && (
+          <img src={campaign.logoImageUrl} alt={campaign.logoText || campaign.name} style={{ maxHeight: 80, maxWidth: 200, marginBottom: 16, objectFit: 'contain' }} />
+        )}
         <div className="logo-text">{campaign.logoText || 'REGALOS'}</div>
         <h1>{campaign.name}</h1>
         <p>{campaign.welcomeText || '¡Bienvenido a la selección de regalos!'}</p>

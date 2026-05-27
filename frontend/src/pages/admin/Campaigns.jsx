@@ -6,6 +6,7 @@ import {
   giftAppCreateCampaign,
   giftAppUpdateCampaign,
   giftAppDeleteCampaign,
+  giftAppUploadCampaignLogo,
   USE_BACKEND,
 } from '../../api/giftAppService';
 import Modal from '../../components/Modal';
@@ -23,6 +24,7 @@ const EMPTY_CAMPAIGN = {
   status: 'ACTIVE',
   logoText: '',
   primaryColor: '#2563eb',
+  logoImageUrl: '',
 };
 
 export default function Campaigns() {
@@ -37,6 +39,7 @@ export default function Campaigns() {
   const [loading, setLoading] = useState(USE_BACKEND);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [logoFile, setLogoFile] = useState(null);
 
   const loadCampaigns = async () => {
     if (USE_BACKEND) setLoading(true);
@@ -64,6 +67,7 @@ export default function Campaigns() {
     setEditing(null);
     setForm(EMPTY_CAMPAIGN);
     setErrors({});
+    setLogoFile(null);
     setShowModal(true);
   };
 
@@ -71,6 +75,7 @@ export default function Campaigns() {
     setEditing(campaign);
     setForm({ ...campaign });
     setErrors({});
+    setLogoFile(null);
     setShowModal(true);
   };
 
@@ -100,13 +105,21 @@ export default function Campaigns() {
 
     setSaving(true);
     try {
+      let result;
       if (editing) {
-        await giftAppUpdateCampaign(editing.id, form);
+        result = await giftAppUpdateCampaign(editing.id, form);
       } else {
-        await giftAppCreateCampaign(form);
+        result = await giftAppCreateCampaign(form);
       }
+
+      const campaignId = result?.id || editing?.id;
+      if (USE_BACKEND && logoFile && campaignId) {
+        await giftAppUploadCampaignLogo(campaignId, logoFile);
+      }
+
       await loadCampaigns();
       setShowModal(false);
+      setLogoFile(null);
       addToast(editing ? 'Campaña actualizada.' : 'Campaña creada.');
     } catch (err) {
       addToast(err.message || 'Error al guardar la campaña.', 'error');
@@ -286,6 +299,43 @@ export default function Campaigns() {
             value={form.primaryColor}
             onChange={(e) => updateField('primaryColor', e.target.value)}
           />
+        </div>
+        <div className="form-group">
+          <label>Logo de la Empresa</label>
+          {form.logoImageUrl && !logoFile && (
+            <div style={{ marginBottom: 8 }}>
+              <img
+                src={form.logoImageUrl}
+                alt="Logo actual"
+                style={{ maxWidth: 160, maxHeight: 80, borderRadius: 6, border: '1px solid var(--gray-200)' }}
+              />
+            </div>
+          )}
+          <input
+            type="file"
+            accept="image/png,image/jpeg,image/jpg,image/webp"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) {
+                if (!['image/png', 'image/jpeg', 'image/jpg', 'image/webp'].includes(file.type)) {
+                  addToast('Solo se permiten imágenes PNG, JPEG, JPG o WebP.', 'error');
+                  e.target.value = '';
+                  return;
+                }
+                if (file.size > 2 * 1024 * 1024) {
+                  addToast('El logo no puede superar los 2MB.', 'error');
+                  e.target.value = '';
+                  return;
+                }
+                setLogoFile(file);
+              }
+            }}
+          />
+          {logoFile && (
+            <p style={{ fontSize: '0.8125rem', color: 'var(--gray-500)', marginTop: 4 }}>
+              {logoFile.name} ({(logoFile.size / 1024).toFixed(1)} KB)
+            </p>
+          )}
         </div>
       </Modal>
 

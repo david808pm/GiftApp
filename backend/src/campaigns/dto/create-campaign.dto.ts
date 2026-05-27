@@ -55,6 +55,11 @@ export class CreateCampaignDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(500)
+  logoImageUrl?: string;
+
+  @IsOptional()
+  @IsString()
   startsAt?: string;
 
   @IsOptional()

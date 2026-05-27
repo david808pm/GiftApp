@@ -88,6 +88,7 @@ export class CampaignsService {
         status: dto.status || 'ACTIVE',
         logoText: dto.logoText?.trim(),
         primaryColor: dto.primaryColor?.trim(),
+        logoImageUrl: dto.logoImageUrl?.trim(),
         startsAt: dto.startsAt ? new Date(dto.startsAt) : null,
         endsAt: dto.endsAt ? new Date(dto.endsAt) : null,
         createdById: adminUserId,
@@ -111,6 +112,7 @@ export class CampaignsService {
     if (dto.status !== undefined) data.status = dto.status;
     if (dto.logoText !== undefined) data.logoText = dto.logoText?.trim();
     if (dto.primaryColor !== undefined) data.primaryColor = dto.primaryColor?.trim();
+    if (dto.logoImageUrl !== undefined) data.logoImageUrl = dto.logoImageUrl?.trim();
     if (dto.startsAt !== undefined) data.startsAt = dto.startsAt ? new Date(dto.startsAt) : null;
     if (dto.endsAt !== undefined) data.endsAt = dto.endsAt ? new Date(dto.endsAt) : null;
 
@@ -139,6 +141,31 @@ export class CampaignsService {
         updatedBy: { select: { id: true, name: true, email: true } },
       },
     });
+  }
+
+  // ── Admin: upload logo ───────────────────────────────────
+
+  async uploadLogo(id: number, file: Express.Multer.File): Promise<{ logoImageUrl: string }> {
+    await this.findOne(id);
+
+    const ext = file.originalname.split('.').pop()?.toLowerCase() || 'png';
+    const safeName = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+    const relativePath = `/uploads/campaign-logos/${safeName}`;
+
+    const fs = await import('fs/promises');
+    const path = await import('path');
+    const dir = path.join(process.cwd(), 'uploads', 'campaign-logos');
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(path.join(dir, safeName), file.buffer);
+
+    const logoImageUrl = `http://localhost:${process.env.PORT || 3001}${relativePath}`;
+
+    await this.prisma.campaign.update({
+      where: { id },
+      data: { logoImageUrl },
+    });
+
+    return { logoImageUrl };
   }
 
   // ── Admin: soft delete ───────────────────────────────────
@@ -176,6 +203,7 @@ export class CampaignsService {
       status: campaign.status,
       logoText: campaign.logoText,
       primaryColor: campaign.primaryColor,
+      logoImageUrl: campaign.logoImageUrl,
     };
   }
 }

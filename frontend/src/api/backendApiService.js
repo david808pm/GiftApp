@@ -60,6 +60,12 @@ export async function deleteCampaign(id) {
   return apiClient.delete(`/admin/campaigns/${id}`);
 }
 
+export async function uploadCampaignLogo(campaignId, file) {
+  const formData = new FormData();
+  formData.append('file', file);
+  return apiClient.upload(`/admin/campaigns/${campaignId}/logo`, formData);
+}
+
 export async function fetchEmployees(query = {}) {
   const params = new URLSearchParams(query).toString();
   return apiClient.get(`/admin/employees${params ? '?' + params : ''}`);

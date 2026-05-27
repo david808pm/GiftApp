@@ -64,6 +64,7 @@ model Campaign {
   status        CampaignStatus  @default(ACTIVE)
   logoText      String?         @db.VarChar(80)
   primaryColor  String?         @db.VarChar(7)
+  logoImageUrl  String?         @db.VarChar(500)
   startsAt      DateTime?
   endsAt        DateTime?
   createdById   Int?

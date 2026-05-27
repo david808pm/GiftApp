@@ -196,6 +196,14 @@ export async function giftAppDeleteCampaign(id) {
   setData(KEYS.CAMPAIGNS, updated);
 }
 
+export async function giftAppUploadCampaignLogo(campaignId, file) {
+  if (USE_BACKEND) {
+    const { uploadCampaignLogo } = await getBackendAuth();
+    return await uploadCampaignLogo(campaignId, file);
+  }
+  throw new Error('La carga de logo solo está disponible en modo backend.');
+}
+
 // ═══════════════════════════════════════════════════════════
 // Employees
 // ═══════════════════════════════════════════════════════════
