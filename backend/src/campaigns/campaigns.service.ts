@@ -148,7 +148,14 @@ export class CampaignsService {
   async uploadLogo(id: number, file: Express.Multer.File): Promise<{ logoImageUrl: string }> {
     await this.findOne(id);
 
-    const ext = file.originalname.split('.').pop()?.toLowerCase() || 'png';
+    // Map MIME type to file extension (more reliable than parsing filename)
+    const mimeToExt: Record<string, string> = {
+      'image/png': 'png',
+      'image/jpeg': 'jpg',
+      'image/jpg': 'jpg',
+      'image/webp': 'webp',
+    };
+    const ext = mimeToExt[file.mimetype] || 'png';
     const safeName = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
     const relativePath = `/uploads/campaign-logos/${safeName}`;
 
@@ -158,7 +165,10 @@ export class CampaignsService {
     await fs.mkdir(dir, { recursive: true });
     await fs.writeFile(path.join(dir, safeName), file.buffer);
 
-    const logoImageUrl = `http://localhost:${process.env.PORT || 3001}${relativePath}`;
+    // Use BASE_URL env var for production, fallback to localhost for development
+    // Normalize: remove trailing slash to avoid double slashes
+    const baseUrl = (process.env.BASE_URL || `http://localhost:${process.env.PORT || 3001}`).replace(/\/$/, '');
+    const logoImageUrl = `${baseUrl}${relativePath}`;
 
     await this.prisma.campaign.update({
       where: { id },

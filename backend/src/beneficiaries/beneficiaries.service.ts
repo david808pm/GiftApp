@@ -132,7 +132,7 @@ export class BeneficiariesService {
 
   async update(id: number, dto: UpdateBeneficiaryDto, adminUserId: number) {
     const beneficiary = await this.findOne(id);
-    const parentEmployee = (beneficiary as any).employee;
+    const parentEmployee = beneficiary.employee;
     const isConfirmed = parentEmployee?.status === 'CONFIRMED';
 
     const data: Prisma.BeneficiaryUpdateInput = {};

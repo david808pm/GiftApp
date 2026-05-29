@@ -89,6 +89,12 @@ export class EmployeesService {
     if (!campaign || campaign.deletedAt) {
       throw new NotFoundException('La campaña seleccionada no existe.');
     }
+    // Only allow assignment to DRAFT or ACTIVE campaigns
+    if (campaign.status !== 'DRAFT' && campaign.status !== 'ACTIVE') {
+      throw new BadRequestException(
+        'No se pueden asignar empleados a campañas cerradas, pausadas o archivadas.',
+      );
+    }
 
     // Validate documentId uniqueness within campaign
     const existing = await this.prisma.employee.findUnique({
@@ -119,7 +125,7 @@ export class EmployeesService {
           deletedAt: null,
           createdById: adminUserId,
           updatedById: adminUserId,
-          confirmedAt: dto.status === 'CONFIRMED' ? new Date() : undefined,
+          confirmedAt: dto.status === 'CONFIRMED' ? new Date() : null,
         },
         include: {
           campaign: { select: { id: true, name: true, slug: true } },
@@ -194,6 +200,12 @@ export class EmployeesService {
       if (!campaign || campaign.deletedAt) {
         throw new NotFoundException('La campaña seleccionada no existe.');
       }
+      // Only allow assignment to DRAFT or ACTIVE campaigns
+      if (campaign.status !== 'DRAFT' && campaign.status !== 'ACTIVE') {
+        throw new BadRequestException(
+          'No se pueden asignar empleados a campañas cerradas, pausadas o archivadas.',
+        );
+      }
       data.campaign = { connect: { id: dto.campaignId } };
     }
 
@@ -225,7 +237,7 @@ export class EmployeesService {
     // status
     if (dto.status !== undefined) {
       if (dto.status === 'CONFIRMED' && !employee.confirmedAt) {
-        (data as any).confirmedAt = new Date();
+        data.confirmedAt = new Date();
       }
       data.status = dto.status;
     }

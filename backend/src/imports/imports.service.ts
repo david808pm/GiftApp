@@ -269,6 +269,7 @@ export class ImportsService {
     let employeesCreated = 0;
     let employeesUpdated = 0;
     let beneficiariesCreated = 0;
+    let skippedRows = 0;
     const warnings: ImportWarning[] = [];
 
     for (const [, group] of groups) {
@@ -291,6 +292,7 @@ export class ImportsService {
               message:
                 'El empleado ya estaba confirmado y no fue actualizado.',
             });
+            skippedRows++;
           }
           continue;
         }
@@ -374,6 +376,7 @@ export class ImportsService {
             row: row.excelRow,
             message: `El beneficiario "${row.beneficiaryFullName}" (${row.beneficiaryAge}, ${row.beneficiaryGender}) ya existe para este empleado.`,
           });
+          skippedRows++;
           continue;
         }
 
@@ -396,7 +399,7 @@ export class ImportsService {
       employeesCreated,
       employeesUpdated,
       beneficiariesCreated,
-      skippedRows: errors.length,
+      skippedRows,
       errors,
       warnings,
     };

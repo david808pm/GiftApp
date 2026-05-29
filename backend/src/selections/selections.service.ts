@@ -1,6 +1,6 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { Prisma } from '@prisma/client';
+import { Prisma, SelectionStatus } from '@prisma/client';
 import * as ExcelJS from 'exceljs';
 
 function sanitizeExcelCell(value: unknown): string {
@@ -83,7 +83,13 @@ export class SelectionsService {
       where.employeeId = query.employeeId;
     }
     if (query.status) {
-      where.status = query.status as any;
+      const validStatuses: SelectionStatus[] = ['CONFIRMED', 'CANCELLED'];
+      if (!validStatuses.includes(query.status as SelectionStatus)) {
+        throw new BadRequestException(
+          `Estado inválido. Valores permitidos: ${validStatuses.join(', ')}.`,
+        );
+      }
+      where.status = query.status as SelectionStatus;
     }
     if (query.fromDate) {
       where.confirmedAt = { ...(where.confirmedAt as any), gte: new Date(query.fromDate) };

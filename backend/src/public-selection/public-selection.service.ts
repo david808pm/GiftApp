@@ -241,8 +241,11 @@ export class PublicSelectionService {
       // 8. Validate every gift
       for (const [idx, item] of dto.items.entries()) {
         const gift = giftsMap.get(item.giftId);
-        const beneficiary = beneficiaries.find((b) => b.id === item.beneficiaryId)!;
+        const beneficiary = beneficiaries.find((b) => b.id === item.beneficiaryId);
 
+        if (!beneficiary) {
+          throw new BadRequestException('Uno de los beneficiarios no fue encontrado.');
+        }
         if (!gift) {
           throw new BadRequestException('Uno de los regalos seleccionados no existe.');
         }
@@ -290,9 +293,15 @@ export class PublicSelectionService {
       const selectionItems: any[] = [];
 
       for (const item of dto.items) {
-        const beneficiary = beneficiaries.find((b) => b.id === item.beneficiaryId)!;
-        const gift = giftsMap.get(item.giftId)!;
+        const beneficiary = beneficiaries.find((b) => b.id === item.beneficiaryId);
+        const gift = giftsMap.get(item.giftId);
+        
+        if (!beneficiary || !gift) {
+          throw new BadRequestException('Error interno: beneficiario o regalo no encontrado.');
+        }
+        
         const primaryImage = gift.images?.[0];
+        const previousStock = gift.stock; // Stock value BEFORE decrement
 
         // Safe conditional stock decrement
         const updatedGift = await tx.gift.updateMany({
@@ -311,7 +320,7 @@ export class PublicSelectionService {
           where: { id: gift.id },
           select: { stock: true },
         });
-        const newStock = giftAfter?.stock ?? gift.stock - 1;
+        const newStock = giftAfter?.stock ?? previousStock - 1;
 
         // Create SelectionItem
         const selectionItem = await tx.selectionItem.create({
@@ -339,7 +348,7 @@ export class PublicSelectionService {
             selectionItemId: selectionItem.id,
             movementType: 'SELECTION_CONFIRMATION',
             quantityChange: -1,
-            previousStock: gift.stock,
+            previousStock,
             newStock,
             reason: 'Confirmación de selección de regalo',
           },
