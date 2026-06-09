@@ -15,7 +15,7 @@ export class BeneficiariesService {
 
   // ── Admin: list ──────────────────────────────────────────
 
-  async findAll(query: BeneficiaryQueryDto) {
+  async findAll(query: BeneficiaryQueryDto, user?: { role: string; companyId?: number }) {
     const { search, employeeId, campaignId, gender, includeDeleted } = query;
 
     const where: Prisma.BeneficiaryWhereInput = {};
@@ -44,6 +44,17 @@ export class BeneficiariesService {
       ];
     }
 
+    // Apply company scoping for COMPANY_VIEWER
+    if (user?.role === 'COMPANY_VIEWER') {
+      if (!user.companyId) {
+        throw new ForbiddenException('No tienes compañía asignada.');
+      }
+      where.employee = {
+        ...((where.employee as Prisma.EmployeeWhereInput) || {}),
+        campaign: { companyId: user.companyId },
+      };
+    }
+
     return this.prisma.beneficiary.findMany({
       where,
       include: {
@@ -65,7 +76,7 @@ export class BeneficiariesService {
 
   // ── Admin: get by id ─────────────────────────────────────
 
-  async findOne(id: number) {
+  async findOne(id: number, user?: { role: string; companyId?: number }) {
     const beneficiary = await this.prisma.beneficiary.findUnique({
       where: { id },
       include: {
@@ -76,7 +87,7 @@ export class BeneficiariesService {
             documentId: true,
             campaignId: true,
             status: true,
-            campaign: { select: { id: true, name: true, slug: true } },
+            campaign: { select: { id: true, name: true, slug: true, companyId: true } },
           },
         },
         createdBy: { select: { id: true, name: true, email: true } },
@@ -86,6 +97,16 @@ export class BeneficiariesService {
 
     if (!beneficiary || beneficiary.deletedAt) {
       throw new NotFoundException('Beneficiario no encontrado.');
+    }
+
+    // Apply company scoping for COMPANY_VIEWER
+    if (user?.role === 'COMPANY_VIEWER') {
+      if (!user.companyId) {
+        throw new ForbiddenException('No tienes compañía asignada.');
+      }
+      if (beneficiary.employee.campaign.companyId !== user.companyId) {
+        throw new ForbiddenException('No tienes acceso a este beneficiario.');
+      }
     }
 
     return beneficiary;

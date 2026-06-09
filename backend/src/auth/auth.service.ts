@@ -14,7 +14,16 @@ export class AuthService {
   async login(dto: LoginDto) {
     const user = await this.prisma.adminUser.findUnique({
       where: { email: dto.email },
-      include: { role: true },
+      include: { 
+        role: true,
+        company: {
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+          },
+        },
+      },
     });
 
     if (!user || !user.isActive) {
@@ -30,6 +39,7 @@ export class AuthService {
       sub: user.id,
       email: user.email,
       role: user.role.name,
+      companyId: user.companyId,
     };
 
     const accessToken = this.jwtService.sign(payload);
@@ -41,6 +51,8 @@ export class AuthService {
         name: user.name,
         email: user.email,
         role: user.role.name,
+        companyId: user.companyId,
+        company: user.company,
       },
     };
   }
@@ -48,7 +60,16 @@ export class AuthService {
   async getProfile(userId: number) {
     const user = await this.prisma.adminUser.findUnique({
       where: { id: userId },
-      include: { role: true },
+      include: { 
+        role: true,
+        company: {
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+          },
+        },
+      },
     });
 
     if (!user) {
@@ -59,7 +80,9 @@ export class AuthService {
       throw new ForbiddenException('Tu cuenta ha sido desactivada.');
     }
 
-    if (user.role.name !== 'ADMIN') {
+    // Accept ADMIN, SUPER_ADMIN, and COMPANY_VIEWER roles
+    const allowedRoles = ['ADMIN', 'SUPER_ADMIN', 'COMPANY_VIEWER'];
+    if (!allowedRoles.includes(user.role.name)) {
       throw new ForbiddenException('Acceso denegado.');
     }
 
@@ -68,6 +91,8 @@ export class AuthService {
       name: user.name,
       email: user.email,
       role: user.role.name,
+      companyId: user.companyId,
+      company: user.company,
     };
   }
 

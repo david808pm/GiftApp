@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useOutletContext } from 'react-router-dom';
 import {
   validateRequired,
   validateGiftStock,
@@ -33,6 +34,7 @@ const EMPTY_GIFT = {
 };
 
 export default function Gifts() {
+  const { isReadOnly } = useOutletContext() || {};
   const [gifts, setGifts] = useState([]);
   const [campaigns, setCampaigns] = useState([]);
   const [search, setSearch] = useState('');
@@ -209,9 +211,11 @@ export default function Gifts() {
     <div>
       <div className="admin-topbar">
         <h1>Regalos</h1>
-        <button className="btn btn-primary btn-sm" onClick={openCreate}>
-          + Nuevo Regalo
-        </button>
+        {!isReadOnly && (
+          <button className="btn btn-primary btn-sm" onClick={openCreate}>
+            + Nuevo Regalo
+          </button>
+        )}
       </div>
       <div className="admin-body">
         <div className="search-bar">
@@ -266,20 +270,22 @@ export default function Gifts() {
                       </span>
                     </td>
                     <td>
-                      <div style={{ display: 'flex', gap: 4 }}>
-                        <button
-                          className="btn btn-outline btn-sm"
-                          onClick={() => openEdit(g)}
-                        >
-                          Editar
-                        </button>
-                        <button
-                          className="btn btn-danger btn-sm"
-                          onClick={() => setDeleteTarget(g)}
-                        >
-                          Eliminar
-                        </button>
-                      </div>
+                      {!isReadOnly && (
+                        <div style={{ display: 'flex', gap: 4 }}>
+                          <button
+                            className="btn btn-outline btn-sm"
+                            onClick={() => openEdit(g)}
+                          >
+                            Editar
+                          </button>
+                          <button
+                            className="btn btn-danger btn-sm"
+                            onClick={() => setDeleteTarget(g)}
+                          >
+                            Eliminar
+                          </button>
+                        </div>
+                      )}
                     </td>
                   </tr>
                 ))}

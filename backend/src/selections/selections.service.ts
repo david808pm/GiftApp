@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma, SelectionStatus } from '@prisma/client';
 import * as ExcelJS from 'exceljs';
@@ -66,14 +66,17 @@ export class SelectionsService {
     },
   };
 
-  async findAll(query: {
-    search?: string;
-    campaignId?: number;
-    employeeId?: number;
-    status?: string;
-    fromDate?: string;
-    toDate?: string;
-  }) {
+  async findAll(
+    query: {
+      search?: string;
+      campaignId?: number;
+      employeeId?: number;
+      status?: string;
+      fromDate?: string;
+      toDate?: string;
+    },
+    user?: { role: string; companyId?: number },
+  ) {
     const where: Prisma.SelectionWhereInput = {};
 
     if (query.campaignId !== undefined) {
@@ -109,6 +112,14 @@ export class SelectionsService {
       ];
     }
 
+    // Apply company scoping for COMPANY_VIEWER
+    if (user?.role === 'COMPANY_VIEWER') {
+      if (!user.companyId) {
+        throw new ForbiddenException('No tienes compañía asignada.');
+      }
+      where.campaign = { companyId: user.companyId };
+    }
+
     return this.prisma.selection.findMany({
       where,
       include: this.selectionInclude,
@@ -116,20 +127,36 @@ export class SelectionsService {
     });
   }
 
-  async findOne(id: number) {
+  async findOne(id: number, user?: { role: string; companyId?: number }) {
     const selection = await this.prisma.selection.findUnique({
       where: { id },
-      include: this.selectionInclude,
+      include: {
+        ...this.selectionInclude,
+        campaign: { select: { id: true, name: true, slug: true, companyId: true } },
+      },
     });
 
     if (!selection) {
       throw new NotFoundException('Selección no encontrada.');
     }
 
+    // Apply company scoping for COMPANY_VIEWER
+    if (user?.role === 'COMPANY_VIEWER') {
+      if (!user.companyId) {
+        throw new ForbiddenException('No tienes compañía asignada.');
+      }
+      if (selection.campaign.companyId !== user.companyId) {
+        throw new ForbiddenException('No tienes acceso a esta selección.');
+      }
+    }
+
     return selection;
   }
 
-  async exportData(query: { campaignId?: number; fromDate?: string; toDate?: string }) {
+  async exportData(
+    query: { campaignId?: number; fromDate?: string; toDate?: string },
+    user?: { role: string; companyId?: number },
+  ) {
     const where: Prisma.SelectionItemWhereInput = {
       selection: { status: 'CONFIRMED' },
     };
@@ -142,6 +169,14 @@ export class SelectionsService {
     }
     if (query.toDate) {
       where.confirmedAt = { ...(where.confirmedAt as any), lte: new Date(query.toDate) };
+    }
+
+    // Apply company scoping for COMPANY_VIEWER
+    if (user?.role === 'COMPANY_VIEWER') {
+      if (!user.companyId) {
+        throw new ForbiddenException('No tienes compañía asignada.');
+      }
+      where.campaign = { companyId: user.companyId };
     }
 
     const items = await this.prisma.selectionItem.findMany({
@@ -171,7 +206,10 @@ export class SelectionsService {
     }));
   }
 
-  async exportXlsx(query: { campaignId?: number; fromDate?: string; toDate?: string }): Promise<Buffer> {
+  async exportXlsx(
+    query: { campaignId?: number; fromDate?: string; toDate?: string },
+    user?: { role: string; companyId?: number },
+  ): Promise<Buffer> {
     const where: Prisma.SelectionWhereInput = { status: 'CONFIRMED' };
 
     if (query.campaignId !== undefined) {
@@ -182,6 +220,14 @@ export class SelectionsService {
       if (query.fromDate) dateFilter.gte = new Date(query.fromDate);
       if (query.toDate) dateFilter.lte = new Date(query.toDate);
       where.confirmedAt = dateFilter;
+    }
+
+    // Apply company scoping for COMPANY_VIEWER
+    if (user?.role === 'COMPANY_VIEWER') {
+      if (!user.companyId) {
+        throw new ForbiddenException('No tienes compañía asignada.');
+      }
+      where.campaign = { companyId: user.companyId };
     }
 
     const selections = await this.prisma.selection.findMany({

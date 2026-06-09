@@ -17,12 +17,12 @@ import { Request } from 'express';
 
 @Controller('admin/import')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles('ADMIN')
 export class ImportsAdminController {
   constructor(private readonly importsService: ImportsService) {}
 
   @Post('employees-beneficiaries')
   @HttpCode(HttpStatus.OK)
+  @Roles('SUPER_ADMIN')
   @UseInterceptors(FileInterceptor('file'))
   uploadEmployeesBeneficiaries(
     @UploadedFile() file: Express.Multer.File,

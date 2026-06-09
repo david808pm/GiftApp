@@ -51,7 +51,9 @@ export default function AdminLayout() {
         const session = await giftAppGetAdminSession();
         if (cancelled) return;
 
-        if (!session || session.role !== 'ADMIN') {
+        // Accept ADMIN, SUPER_ADMIN, and COMPANY_VIEWER roles
+        const allowedRoles = ['ADMIN', 'SUPER_ADMIN', 'COMPANY_VIEWER'];
+        if (!session || !allowedRoles.includes(session.role)) {
           await giftAppClearAdminSession();
           navigate('/admin/login', { replace: true });
           return;
@@ -93,7 +95,15 @@ export default function AdminLayout() {
     );
   }
 
-  if (!session || session.role !== 'ADMIN') return null;
+  // Accept ADMIN, SUPER_ADMIN, and COMPANY_VIEWER roles
+  const allowedRoles = ['ADMIN', 'SUPER_ADMIN', 'COMPANY_VIEWER'];
+  if (!session || !allowedRoles.includes(session.role)) return null;
+
+  // ── Role flags ─────────────────────────────────────────
+
+  const isSuperAdmin = session.role === 'SUPER_ADMIN';
+  const isCompanyViewer = session.role === 'COMPANY_VIEWER';
+  const isReadOnly = isCompanyViewer;
 
   // ── Logout ─────────────────────────────────────────────
 
@@ -170,7 +180,7 @@ export default function AdminLayout() {
             Cerrar Sesión
           </button>
         </nav>
-        <Outlet />
+        <Outlet context={{ isReadOnly, isSuperAdmin, isCompanyViewer, session }} />
       </main>
     </div>
   );

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useOutletContext } from 'react-router-dom';
 import { validateRequired, validateNumeric } from '../../utils/validators';
 import { formatDate } from '../../utils/dates';
 import {
@@ -27,6 +28,7 @@ const EMPTY_EMPLOYEE = {
 };
 
 export default function Employees() {
+  const { isReadOnly } = useOutletContext() || {};
   const [employees, setEmployees] = useState([]);
   const [campaigns, setCampaigns] = useState([]);
   const [search, setSearch] = useState('');
@@ -224,25 +226,27 @@ export default function Employees() {
     <div>
       <div className="admin-topbar">
         <h1>Empleados</h1>
-        <div style={{ display: 'flex', gap: 8 }}>
-          {USE_BACKEND ? (
-            <button className="btn btn-outline btn-sm" onClick={openImportModal}>
-              Importar Excel
+        {!isReadOnly && (
+          <div style={{ display: 'flex', gap: 8 }}>
+            {USE_BACKEND ? (
+              <button className="btn btn-outline btn-sm" onClick={openImportModal}>
+                Importar Excel
+              </button>
+            ) : (
+              <button
+                className="btn btn-outline btn-sm"
+                disabled
+                title="La importación desde Excel solo está disponible en modo backend."
+                style={{ cursor: 'not-allowed', opacity: 0.6 }}
+              >
+                Importar Excel
+              </button>
+            )}
+            <button className="btn btn-primary btn-sm" onClick={openCreate}>
+              + Nuevo Empleado
             </button>
-          ) : (
-            <button
-              className="btn btn-outline btn-sm"
-              disabled
-              title="La importación desde Excel solo está disponible en modo backend."
-              style={{ cursor: 'not-allowed', opacity: 0.6 }}
-            >
-              Importar Excel
-            </button>
-          )}
-          <button className="btn btn-primary btn-sm" onClick={openCreate}>
-            + Nuevo Empleado
-          </button>
-        </div>
+          </div>
+        )}
       </div>
       <div className="admin-body">
         <div className="search-bar">
@@ -299,20 +303,22 @@ export default function Employees() {
                     </td>
                     <td>{formatDate(e.createdAt)}</td>
                     <td>
-                      <div style={{ display: 'flex', gap: 4 }}>
-                        <button
-                          className="btn btn-outline btn-sm"
-                          onClick={() => openEdit(e)}
-                        >
-                          Editar
-                        </button>
-                        <button
-                          className="btn btn-danger btn-sm"
-                          onClick={() => setDeleteTarget(e)}
-                        >
-                          Eliminar
-                        </button>
-                      </div>
+                      {!isReadOnly && (
+                        <div style={{ display: 'flex', gap: 4 }}>
+                          <button
+                            className="btn btn-outline btn-sm"
+                            onClick={() => openEdit(e)}
+                          >
+                            Editar
+                          </button>
+                          <button
+                            className="btn btn-danger btn-sm"
+                            onClick={() => setDeleteTarget(e)}
+                          >
+                            Eliminar
+                          </button>
+                        </div>
+                      )}
                     </td>
                   </tr>
                 ))}

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useOutletContext } from 'react-router-dom';
 import { validateRequired, validateAge, validateGender } from '../../utils/validators';
 import { formatDate } from '../../utils/dates';
 import {
@@ -23,6 +24,7 @@ const EMPTY_BENEFICIARY = {
 };
 
 export default function BeneficiariesAdmin() {
+  const { isReadOnly } = useOutletContext() || {};
   const [beneficiaries, setBeneficiaries] = useState([]);
   const [employees, setEmployees] = useState([]);
   const [campaigns, setCampaigns] = useState([]);
@@ -183,9 +185,11 @@ export default function BeneficiariesAdmin() {
     <div>
       <div className="admin-topbar">
         <h1>Beneficiarios</h1>
-        <button className="btn btn-primary btn-sm" onClick={openCreate}>
-          + Nuevo Beneficiario
-        </button>
+        {!isReadOnly && (
+          <button className="btn btn-primary btn-sm" onClick={openCreate}>
+            + Nuevo Beneficiario
+          </button>
+        )}
       </div>
       <div className="admin-body">
         <div className="search-bar">
@@ -234,20 +238,22 @@ export default function BeneficiariesAdmin() {
                     <td>{getCampaignForEmployee(b.employeeId)}</td>
                     <td>{formatDate(b.createdAt)}</td>
                     <td>
-                      <div style={{ display: 'flex', gap: 4 }}>
-                        <button
-                          className="btn btn-outline btn-sm"
-                          onClick={() => openEdit(b)}
-                        >
-                          Editar
-                        </button>
-                        <button
-                          className="btn btn-danger btn-sm"
-                          onClick={() => setDeleteTarget(b)}
-                        >
-                          Eliminar
-                        </button>
-                      </div>
+                      {!isReadOnly && (
+                        <div style={{ display: 'flex', gap: 4 }}>
+                          <button
+                            className="btn btn-outline btn-sm"
+                            onClick={() => openEdit(b)}
+                          >
+                            Editar
+                          </button>
+                          <button
+                            className="btn btn-danger btn-sm"
+                            onClick={() => setDeleteTarget(b)}
+                          >
+                            Eliminar
+                          </button>
+                        </div>
+                      )}
                     </td>
                   </tr>
                 ))}

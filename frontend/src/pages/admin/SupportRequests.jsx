@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useOutletContext } from 'react-router-dom';
 import { formatDate } from '../../utils/dates';
 import { SUPPORT_TYPE_LABELS } from '../../constants/appConstants';
 import {
@@ -13,6 +14,7 @@ import EmptyState from '../../components/EmptyState';
 import Toast, { useToast } from '../../components/Toast';
 
 export default function SupportRequests() {
+  const { isReadOnly } = useOutletContext() || {};
   const [requests, setRequests] = useState([]);
   const [campaigns, setCampaigns] = useState([]);
   const [employees, setEmployees] = useState([]);
@@ -218,9 +220,11 @@ export default function SupportRequests() {
             <button className="btn btn-outline" onClick={() => setSelected(null)} disabled={saving}>
               Cancelar
             </button>
-            <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
-              {saving ? 'Guardando...' : 'Guardar Cambios'}
-            </button>
+            {!isReadOnly && (
+              <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
+                {saving ? 'Guardando...' : 'Guardar Cambios'}
+              </button>
+            )}
           </>
         }
       >
@@ -246,22 +250,30 @@ export default function SupportRequests() {
             </div>
             <div className="form-group">
               <label>Estado</label>
-              <select
-                value={statusForm}
-                onChange={(e) => setStatusForm(e.target.value)}
-              >
-                <option value="OPEN">Abierto</option>
-                <option value="IN_REVIEW">En Revisión</option>
-                <option value="RESOLVED">Resuelto</option>
-              </select>
+              {isReadOnly ? (
+                <p>{statusForm === 'OPEN' ? 'Abierto' : statusForm === 'IN_REVIEW' ? 'En Revisión' : 'Resuelto'}</p>
+              ) : (
+                <select
+                  value={statusForm}
+                  onChange={(e) => setStatusForm(e.target.value)}
+                >
+                  <option value="OPEN">Abierto</option>
+                  <option value="IN_REVIEW">En Revisión</option>
+                  <option value="RESOLVED">Resuelto</option>
+                </select>
+              )}
             </div>
             <div className="form-group">
               <label>Nota Interna</label>
-              <textarea
-                value={noteForm}
-                onChange={(e) => setNoteForm(e.target.value)}
-                placeholder="Agregar una nota interna..."
-              />
+              {isReadOnly ? (
+                <p style={{ whiteSpace: 'pre-wrap' }}>{noteForm || 'Sin notas'}</p>
+              ) : (
+                <textarea
+                  value={noteForm}
+                  onChange={(e) => setNoteForm(e.target.value)}
+                  placeholder="Agregar una nota interna..."
+                />
+              )}
             </div>
           </>
         )}

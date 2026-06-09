@@ -1,11 +1,33 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class DashboardService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async getStats() {
+  async getStats(user?: { role: string; companyId?: number }) {
+    // Build base filters for company scoping
+    const campaignFilter: Prisma.CampaignWhereInput = { deletedAt: null };
+    const employeeFilter: Prisma.EmployeeWhereInput = { deletedAt: null };
+    const beneficiaryFilter: Prisma.BeneficiaryWhereInput = { deletedAt: null };
+    const giftFilter: Prisma.GiftWhereInput = { deletedAt: null };
+    const supportFilter: Prisma.SupportRequestWhereInput = {};
+    const selectionFilter: Prisma.SelectionWhereInput = {};
+
+    // Apply company scoping for COMPANY_VIEWER
+    if (user?.role === 'COMPANY_VIEWER') {
+      if (!user.companyId) {
+        throw new ForbiddenException('No tienes compañía asignada.');
+      }
+      campaignFilter.companyId = user.companyId;
+      employeeFilter.campaign = { companyId: user.companyId };
+      beneficiaryFilter.employee = { campaign: { companyId: user.companyId } };
+      giftFilter.campaign = { companyId: user.companyId };
+      supportFilter.campaign = { companyId: user.companyId };
+      selectionFilter.campaign = { companyId: user.companyId };
+    }
+
     const [
       campaignsAll,
       activeCampaigns,
@@ -27,33 +49,33 @@ export class DashboardService {
       confirmedSelections,
       cancelledSelections,
     ] = await Promise.all([
-      this.prisma.campaign.count({ where: { deletedAt: null } }),
-      this.prisma.campaign.count({ where: { deletedAt: null, status: 'ACTIVE' } }),
+      this.prisma.campaign.count({ where: campaignFilter }),
+      this.prisma.campaign.count({ where: { ...campaignFilter, status: 'ACTIVE' } }),
       this.prisma.campaign.count({
         where: {
-          deletedAt: null,
+          ...campaignFilter,
           status: { in: ['CLOSED', 'ARCHIVED', 'PAUSED'] },
         },
       }),
-      this.prisma.employee.count({ where: { deletedAt: null } }),
-      this.prisma.employee.count({ where: { deletedAt: null, status: 'PENDING' } }),
-      this.prisma.employee.count({ where: { deletedAt: null, status: 'IN_PROGRESS' } }),
-      this.prisma.employee.count({ where: { deletedAt: null, status: 'CONFIRMED' } }),
-      this.prisma.employee.count({ where: { deletedAt: null, status: 'BLOCKED' } }),
-      this.prisma.beneficiary.count({ where: { deletedAt: null } }),
-      this.prisma.gift.count({ where: { deletedAt: null } }),
-      this.prisma.gift.count({ where: { deletedAt: null, status: 'ACTIVE' } }),
-      this.prisma.gift.count({ where: { deletedAt: null, status: 'INACTIVE' } }),
+      this.prisma.employee.count({ where: employeeFilter }),
+      this.prisma.employee.count({ where: { ...employeeFilter, status: 'PENDING' } }),
+      this.prisma.employee.count({ where: { ...employeeFilter, status: 'IN_PROGRESS' } }),
+      this.prisma.employee.count({ where: { ...employeeFilter, status: 'CONFIRMED' } }),
+      this.prisma.employee.count({ where: { ...employeeFilter, status: 'BLOCKED' } }),
+      this.prisma.beneficiary.count({ where: beneficiaryFilter }),
+      this.prisma.gift.count({ where: giftFilter }),
+      this.prisma.gift.count({ where: { ...giftFilter, status: 'ACTIVE' } }),
+      this.prisma.gift.count({ where: { ...giftFilter, status: 'INACTIVE' } }),
       this.prisma.gift.aggregate({
-        where: { deletedAt: null },
+        where: giftFilter,
         _sum: { stock: true },
       }),
-      this.prisma.supportRequest.count(),
-      this.prisma.supportRequest.count({ where: { status: 'OPEN' } }),
-      this.prisma.supportRequest.count({ where: { status: 'IN_REVIEW' } }),
-      this.prisma.supportRequest.count({ where: { status: 'RESOLVED' } }),
-      this.prisma.selection.count({ where: { status: 'CONFIRMED' } }),
-      this.prisma.selection.count({ where: { status: 'CANCELLED' } }),
+      this.prisma.supportRequest.count({ where: supportFilter }),
+      this.prisma.supportRequest.count({ where: { ...supportFilter, status: 'OPEN' } }),
+      this.prisma.supportRequest.count({ where: { ...supportFilter, status: 'IN_REVIEW' } }),
+      this.prisma.supportRequest.count({ where: { ...supportFilter, status: 'RESOLVED' } }),
+      this.prisma.selection.count({ where: { ...selectionFilter, status: 'CONFIRMED' } }),
+      this.prisma.selection.count({ where: { ...selectionFilter, status: 'CANCELLED' } }),
     ]);
 
     return {

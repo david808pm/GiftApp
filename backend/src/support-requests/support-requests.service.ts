@@ -1,6 +1,7 @@
 import {
   Injectable,
   NotFoundException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateSupportRequestDto } from './dto/create-support-request.dto';
@@ -86,7 +87,7 @@ export class SupportRequestsService {
 
   // ── Admin: list ──────────────────────────────────────────
 
-  async findAll(query: SupportRequestQueryDto) {
+  async findAll(query: SupportRequestQueryDto, user?: { role: string; companyId?: number }) {
     const {
       search,
       campaignId,
@@ -127,6 +128,16 @@ export class SupportRequestsService {
       ];
     }
 
+    // Apply company scoping for COMPANY_VIEWER
+    if (user?.role === 'COMPANY_VIEWER') {
+      if (!user.companyId) {
+        throw new ForbiddenException('No tienes compañía asignada.');
+      }
+      // Only show requests with campaignId matching user's company
+      // Hide requests with null campaignId (conservative behavior)
+      where.campaign = { companyId: user.companyId };
+    }
+
     return this.prisma.supportRequest.findMany({
       where,
       include: this.supportRequestInclude,
@@ -136,14 +147,28 @@ export class SupportRequestsService {
 
   // ── Admin: get by id ─────────────────────────────────────
 
-  async findOne(id: number) {
+  async findOne(id: number, user?: { role: string; companyId?: number }) {
     const request = await this.prisma.supportRequest.findUnique({
       where: { id },
-      include: this.supportRequestInclude,
+      include: {
+        ...this.supportRequestInclude,
+        campaign: { select: { id: true, name: true, slug: true, companyId: true } },
+      },
     });
 
     if (!request) {
       throw new NotFoundException('Solicitud de soporte no encontrada.');
+    }
+
+    // Apply company scoping for COMPANY_VIEWER
+    if (user?.role === 'COMPANY_VIEWER') {
+      if (!user.companyId) {
+        throw new ForbiddenException('No tienes compañía asignada.');
+      }
+      // Hide requests with null campaignId or different company
+      if (!request.campaign || request.campaign.companyId !== user.companyId) {
+        throw new ForbiddenException('No tienes acceso a esta solicitud de soporte.');
+      }
     }
 
     return request;

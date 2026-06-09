@@ -17,7 +17,7 @@ export class EmployeesService {
 
   // ── Admin: list ──────────────────────────────────────────
 
-  async findAll(query: EmployeeQueryDto) {
+  async findAll(query: EmployeeQueryDto, user?: { role: string; companyId?: number }) {
     const { search, campaignId, status, includeDeleted } = query;
 
     const where: Prisma.EmployeeWhereInput = {};
@@ -42,6 +42,14 @@ export class EmployeesService {
       ];
     }
 
+    // Apply company scoping for COMPANY_VIEWER
+    if (user?.role === 'COMPANY_VIEWER') {
+      if (!user.companyId) {
+        throw new ForbiddenException('No tienes compañía asignada.');
+      }
+      where.campaign = { companyId: user.companyId };
+    }
+
     return this.prisma.employee.findMany({
       where,
       include: {
@@ -55,11 +63,11 @@ export class EmployeesService {
 
   // ── Admin: get by id ─────────────────────────────────────
 
-  async findOne(id: number) {
+  async findOne(id: number, user?: { role: string; companyId?: number }) {
     const employee = await this.prisma.employee.findUnique({
       where: { id },
       include: {
-        campaign: { select: { id: true, name: true, slug: true } },
+        campaign: { select: { id: true, name: true, slug: true, companyId: true } },
         createdBy: { select: { id: true, name: true, email: true } },
         updatedBy: { select: { id: true, name: true, email: true } },
       },
@@ -67,6 +75,16 @@ export class EmployeesService {
 
     if (!employee || employee.deletedAt) {
       throw new NotFoundException('Empleado no encontrado.');
+    }
+
+    // Apply company scoping for COMPANY_VIEWER
+    if (user?.role === 'COMPANY_VIEWER') {
+      if (!user.companyId) {
+        throw new ForbiddenException('No tienes compañía asignada.');
+      }
+      if (employee.campaign.companyId !== user.companyId) {
+        throw new ForbiddenException('No tienes acceso a este empleado.');
+      }
     }
 
     return employee;

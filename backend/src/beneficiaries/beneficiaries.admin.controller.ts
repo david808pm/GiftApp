@@ -24,27 +24,32 @@ import { Request } from 'express';
 
 @Controller('admin/beneficiaries')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles('ADMIN')
 export class BeneficiariesAdminController {
   constructor(private readonly beneficiariesService: BeneficiariesService) {}
 
   @Get()
-  findAll(@Query() query: BeneficiaryQueryDto) {
-    return this.beneficiariesService.findAll(query);
+  @Roles('SUPER_ADMIN', 'ADMIN', 'COMPANY_VIEWER')
+  findAll(@Query() query: BeneficiaryQueryDto, @Req() req: Request) {
+    const user = req.user as any;
+    return this.beneficiariesService.findAll(query, user);
   }
 
   @Get(':id')
-  findOne(@Param('id', ParseIntPipe) id: number) {
-    return this.beneficiariesService.findOne(id);
+  @Roles('SUPER_ADMIN', 'ADMIN', 'COMPANY_VIEWER')
+  findOne(@Param('id', ParseIntPipe) id: number, @Req() req: Request) {
+    const user = req.user as any;
+    return this.beneficiariesService.findOne(id, user);
   }
 
   @Post()
+  @Roles('SUPER_ADMIN')
   create(@Body() dto: CreateBeneficiaryDto, @Req() req: Request) {
     const adminUserId = (req.user as any).userId;
     return this.beneficiariesService.create(dto, adminUserId);
   }
 
   @Patch(':id')
+  @Roles('SUPER_ADMIN')
   update(
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateBeneficiaryDto,
@@ -56,6 +61,7 @@ export class BeneficiariesAdminController {
 
   @Delete(':id')
   @HttpCode(HttpStatus.OK)
+  @Roles('SUPER_ADMIN')
   remove(@Param('id', ParseIntPipe) id: number) {
     return this.beneficiariesService.remove(id);
   }

@@ -3,6 +3,7 @@ import {
   NotFoundException,
   ConflictException,
   BadRequestException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateCampaignDto } from './dto/create-campaign.dto';
@@ -16,7 +17,7 @@ export class CampaignsService {
 
   // ── Admin: list ──────────────────────────────────────────
 
-  async findAll(query: QueryCampaignsDto) {
+  async findAll(query: QueryCampaignsDto, user?: { role: string; companyId?: number }) {
     const { search, status, includeDeleted } = query;
 
     const where: Prisma.CampaignWhereInput = {};
@@ -36,6 +37,14 @@ export class CampaignsService {
       ];
     }
 
+    // Company scoping for COMPANY_VIEWER
+    if (user?.role === 'COMPANY_VIEWER') {
+      if (!user.companyId) {
+        throw new ForbiddenException('No tienes compañía asignada.');
+      }
+      where.companyId = user.companyId;
+    }
+
     return this.prisma.campaign.findMany({
       where,
       include: {
@@ -48,7 +57,7 @@ export class CampaignsService {
 
   // ── Admin: get by id ─────────────────────────────────────
 
-  async findOne(id: number) {
+  async findOne(id: number, user?: { role: string; companyId?: number }) {
     const campaign = await this.prisma.campaign.findUnique({
       where: { id },
       include: {
@@ -59,6 +68,16 @@ export class CampaignsService {
 
     if (!campaign || campaign.deletedAt) {
       throw new NotFoundException('Campaña no encontrada.');
+    }
+
+    // Company scoping for COMPANY_VIEWER
+    if (user?.role === 'COMPANY_VIEWER') {
+      if (!user.companyId) {
+        throw new ForbiddenException('No tienes compañía asignada.');
+      }
+      if (campaign.companyId !== user.companyId) {
+        throw new ForbiddenException('No tienes acceso a esta campaña.');
+      }
     }
 
     return campaign;

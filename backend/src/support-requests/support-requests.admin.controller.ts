@@ -19,21 +19,25 @@ import { Request } from 'express';
 
 @Controller('admin/support-requests')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles('ADMIN')
 export class SupportRequestsAdminController {
   constructor(private readonly supportRequestsService: SupportRequestsService) {}
 
   @Get()
-  findAll(@Query() query: SupportRequestQueryDto) {
-    return this.supportRequestsService.findAll(query);
+  @Roles('SUPER_ADMIN', 'ADMIN', 'COMPANY_VIEWER')
+  findAll(@Query() query: SupportRequestQueryDto, @Req() req: Request) {
+    const user = req.user as any;
+    return this.supportRequestsService.findAll(query, user);
   }
 
   @Get(':id')
-  findOne(@Param('id', ParseIntPipe) id: number) {
-    return this.supportRequestsService.findOne(id);
+  @Roles('SUPER_ADMIN', 'ADMIN', 'COMPANY_VIEWER')
+  findOne(@Param('id', ParseIntPipe) id: number, @Req() req: Request) {
+    const user = req.user as any;
+    return this.supportRequestsService.findOne(id, user);
   }
 
   @Patch(':id')
+  @Roles('SUPER_ADMIN')
   update(
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateSupportRequestDto,

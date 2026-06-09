@@ -3,6 +3,7 @@ import {
   NotFoundException,
   ConflictException,
   BadRequestException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateGiftDto } from './dto/create-gift.dto';
@@ -54,7 +55,7 @@ export class GiftsService {
 
   // ── Admin: list ──────────────────────────────────────────
 
-  async findAll(query: GiftQueryDto) {
+  async findAll(query: GiftQueryDto, user?: { role: string; companyId?: number }) {
     const {
       search,
       campaignId,
@@ -101,6 +102,14 @@ export class GiftsService {
       ];
     }
 
+    // Apply company scoping for COMPANY_VIEWER
+    if (user?.role === 'COMPANY_VIEWER') {
+      if (!user.companyId) {
+        throw new ForbiddenException('No tienes compañía asignada.');
+      }
+      where.campaign = { companyId: user.companyId };
+    }
+
     return this.prisma.gift.findMany({
       where,
       include: this.giftInclude,
@@ -110,14 +119,27 @@ export class GiftsService {
 
   // ── Admin: get by id ─────────────────────────────────────
 
-  async findOne(id: number) {
+  async findOne(id: number, user?: { role: string; companyId?: number }) {
     const gift = await this.prisma.gift.findUnique({
       where: { id },
-      include: this.giftInclude,
+      include: {
+        ...this.giftInclude,
+        campaign: { select: { id: true, name: true, slug: true, companyId: true } },
+      },
     });
 
     if (!gift || gift.deletedAt) {
       throw new NotFoundException('Regalo no encontrado.');
+    }
+
+    // Apply company scoping for COMPANY_VIEWER
+    if (user?.role === 'COMPANY_VIEWER') {
+      if (!user.companyId) {
+        throw new ForbiddenException('No tienes compañía asignada.');
+      }
+      if (gift.campaign.companyId !== user.companyId) {
+        throw new ForbiddenException('No tienes acceso a este regalo.');
+      }
     }
 
     return gift;

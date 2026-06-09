@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useOutletContext } from 'react-router-dom';
 import { validateRequired, validateSlug } from '../../utils/validators';
 import { formatDate } from '../../utils/dates';
 import {
@@ -28,6 +29,7 @@ const EMPTY_CAMPAIGN = {
 };
 
 export default function Campaigns() {
+  const { isReadOnly } = useOutletContext() || {};
   const [campaigns, setCampaigns] = useState([]);
   const [search, setSearch] = useState('');
   const [showModal, setShowModal] = useState(false);
@@ -166,9 +168,11 @@ export default function Campaigns() {
     <div>
       <div className="admin-topbar">
         <h1>Campañas</h1>
-        <button className="btn btn-primary btn-sm" onClick={openCreate}>
-          + Nueva Campaña
-        </button>
+        {!isReadOnly && (
+          <button className="btn btn-primary btn-sm" onClick={openCreate}>
+            + Nueva Campaña
+          </button>
+        )}
       </div>
       <div className="admin-body">
         <div className="search-bar">
@@ -206,20 +210,22 @@ export default function Campaigns() {
                     </td>
                     <td>{formatDate(c.createdAt)}</td>
                     <td>
-                      <div style={{ display: 'flex', gap: 4 }}>
-                        <button
-                          className="btn btn-outline btn-sm"
-                          onClick={() => openEdit(c)}
-                        >
-                          Editar
-                        </button>
-                        <button
-                          className="btn btn-danger btn-sm"
-                          onClick={() => setDeleteTarget(c)}
-                        >
-                          Eliminar
-                        </button>
-                      </div>
+                      {!isReadOnly && (
+                        <div style={{ display: 'flex', gap: 4 }}>
+                          <button
+                            className="btn btn-outline btn-sm"
+                            onClick={() => openEdit(c)}
+                          >
+                            Editar
+                          </button>
+                          <button
+                            className="btn btn-danger btn-sm"
+                            onClick={() => setDeleteTarget(c)}
+                          >
+                            Eliminar
+                          </button>
+                        </div>
+                      )}
                     </td>
                   </tr>
                 ))}

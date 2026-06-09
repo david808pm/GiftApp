@@ -17,6 +17,13 @@ export class RolesGuard implements CanActivate {
     }
 
     const { user } = context.switchToHttp().getRequest();
+    
+    // SUPER_ADMIN has access to everything
+    if (user?.role === 'SUPER_ADMIN') {
+      return true;
+    }
+    
+    // All other roles (including COMPANY_VIEWER) must be explicitly listed
     return requiredRoles.includes(user?.role);
   }
 }

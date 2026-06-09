@@ -7,6 +7,23 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ── Companies ─────────────────────────────────────────────
+
+model Company {
+  id          Int        @id @default(autoincrement())
+  name        String     @db.VarChar(180)
+  slug        String     @unique @db.VarChar(200)
+  isActive    Boolean    @default(true)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  deletedAt   DateTime?
+  campaigns   Campaign[]
+  adminUsers  AdminUser[]
+
+  @@index([slug])
+  @@index([isActive])
+}
+
 // ── Auth & Users ──────────────────────────────────────────
 
 model Role {
@@ -25,6 +42,8 @@ model AdminUser {
   password         String     @db.VarChar(255)
   roleId           Int
   role             Role       @relation(fields: [roleId], references: [id])
+  companyId        Int?
+  company          Company?   @relation(fields: [companyId], references: [id])
   isActive         Boolean    @default(true)
   campaignsCreated Campaign[] @relation("CampaignsCreated")
   campaignsUpdated Campaign[] @relation("CampaignsUpdated")
@@ -43,6 +62,7 @@ model AdminUser {
 
   @@index([email])
   @@index([roleId])
+  @@index([companyId])
 }
 
 // ── Campaigns ────────────────────────────────────────────
@@ -65,6 +85,8 @@ model Campaign {
   logoText      String?         @db.VarChar(80)
   primaryColor  String?         @db.VarChar(7)
   logoImageUrl  String?         @db.VarChar(500)
+  companyId     Int?
+  company       Company?        @relation(fields: [companyId], references: [id])
   startsAt      DateTime?
   endsAt        DateTime?
   createdById   Int?
@@ -85,6 +107,7 @@ model Campaign {
   @@index([slug])
   @@index([status])
   @@index([deletedAt])
+  @@index([companyId])
 }
 
 // ── Employees ────────────────────────────────────────────

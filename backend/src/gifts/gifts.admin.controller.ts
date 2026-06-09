@@ -24,27 +24,32 @@ import { Request } from 'express';
 
 @Controller('admin/gifts')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles('ADMIN')
 export class GiftsAdminController {
   constructor(private readonly giftsService: GiftsService) {}
 
   @Get()
-  findAll(@Query() query: GiftQueryDto) {
-    return this.giftsService.findAll(query);
+  @Roles('SUPER_ADMIN', 'ADMIN', 'COMPANY_VIEWER')
+  findAll(@Query() query: GiftQueryDto, @Req() req: Request) {
+    const user = req.user as any;
+    return this.giftsService.findAll(query, user);
   }
 
   @Get(':id')
-  findOne(@Param('id', ParseIntPipe) id: number) {
-    return this.giftsService.findOne(id);
+  @Roles('SUPER_ADMIN', 'ADMIN', 'COMPANY_VIEWER')
+  findOne(@Param('id', ParseIntPipe) id: number, @Req() req: Request) {
+    const user = req.user as any;
+    return this.giftsService.findOne(id, user);
   }
 
   @Post()
+  @Roles('SUPER_ADMIN')
   create(@Body() dto: CreateGiftDto, @Req() req: Request) {
     const adminUserId = (req.user as any).userId;
     return this.giftsService.create(dto, adminUserId);
   }
 
   @Patch(':id')
+  @Roles('SUPER_ADMIN')
   update(
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateGiftDto,
@@ -56,6 +61,7 @@ export class GiftsAdminController {
 
   @Delete(':id')
   @HttpCode(HttpStatus.OK)
+  @Roles('SUPER_ADMIN')
   remove(@Param('id', ParseIntPipe) id: number) {
     return this.giftsService.remove(id);
   }

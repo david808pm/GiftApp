@@ -31,27 +31,32 @@ const MAX_LOGO_SIZE = 2 * 1024 * 1024;
 
 @Controller('admin/campaigns')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles('ADMIN')
 export class CampaignsAdminController {
   constructor(private readonly campaignsService: CampaignsService) {}
 
   @Get()
-  findAll(@Query() query: QueryCampaignsDto) {
-    return this.campaignsService.findAll(query);
+  @Roles('ADMIN', 'SUPER_ADMIN', 'COMPANY_VIEWER')
+  findAll(@Query() query: QueryCampaignsDto, @Req() req: Request) {
+    const user = req.user as any;
+    return this.campaignsService.findAll(query, user);
   }
 
   @Get(':id')
-  findOne(@Param('id', ParseIntPipe) id: number) {
-    return this.campaignsService.findOne(id);
+  @Roles('ADMIN', 'SUPER_ADMIN', 'COMPANY_VIEWER')
+  findOne(@Param('id', ParseIntPipe) id: number, @Req() req: Request) {
+    const user = req.user as any;
+    return this.campaignsService.findOne(id, user);
   }
 
   @Post()
+  @Roles('SUPER_ADMIN')
   create(@Body() dto: CreateCampaignDto, @Req() req: Request) {
     const adminUserId = (req.user as any).userId;
     return this.campaignsService.create(dto, adminUserId);
   }
 
   @Patch(':id')
+  @Roles('SUPER_ADMIN')
   update(
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateCampaignDto,
@@ -63,11 +68,13 @@ export class CampaignsAdminController {
 
   @Delete(':id')
   @HttpCode(HttpStatus.OK)
+  @Roles('SUPER_ADMIN')
   remove(@Param('id', ParseIntPipe) id: number) {
     return this.campaignsService.remove(id);
   }
 
   @Post(':id/logo')
+  @Roles('SUPER_ADMIN')
   @UseInterceptors(FileInterceptor('file'))
   async uploadLogo(
     @Param('id', ParseIntPipe) id: number,
