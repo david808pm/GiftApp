@@ -19,6 +19,11 @@ const NAV_ITEMS = [
   { path: '/admin/support-requests', label: 'Soporte', icon: '🎫' },
 ];
 
+const SUPER_ADMIN_NAV_ITEMS = [
+  ...NAV_ITEMS,
+  { path: '/admin/users', label: 'Usuarios', icon: '👤' },
+];
+
 export default function AdminLayout() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -105,6 +110,9 @@ export default function AdminLayout() {
   const isCompanyViewer = session.role === 'COMPANY_VIEWER';
   const isReadOnly = isCompanyViewer;
 
+  // Navigation items based on role
+  const navItems = isSuperAdmin ? SUPER_ADMIN_NAV_ITEMS : NAV_ITEMS;
+
   // ── Logout ─────────────────────────────────────────────
 
   const handleLogout = async () => {
@@ -124,7 +132,7 @@ export default function AdminLayout() {
           <small>{session.name}</small>
         </div>
         <nav>
-          {NAV_ITEMS.map((item) => (
+          {navItems.map((item) => (
             <Link
               key={item.path}
               to={item.path}
@@ -155,7 +163,7 @@ export default function AdminLayout() {
           </button>
         </div>
         <nav className={`admin-mobile-menu ${mobileMenuOpen ? 'open' : ''}`}>
-          {NAV_ITEMS.map((item) => (
+          {navItems.map((item) => (
             <Link
               key={item.path}
               to={item.path}

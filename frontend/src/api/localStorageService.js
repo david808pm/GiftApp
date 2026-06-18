@@ -284,8 +284,8 @@ function exportSelectionsToCSV(campaignId) {
     const benef = beneficiaries.find((b) => b.id === sel.beneficiaryId);
     rows.push([
       campaign ? campaign.name : sel.campaignId,
-      sel.employeeName || employee ? employee.fullName : sel.employeeId,
-      sel.employeeDocumentId || employee ? employee.documentId : '',
+      sel.employeeName || (employee ? employee.fullName : sel.employeeId),
+      sel.employeeDocumentId || (employee ? employee.documentId : ''),
       employee?.phone || '',
       employee?.shippingAddress || '',
       employee?.shippingCity || '',

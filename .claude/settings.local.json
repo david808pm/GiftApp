@@ -1,0 +1,35 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(timeout 18 node dist/main.js)",
+      "Read(//tmp/**)",
+      "Bash(node node_modules/eslint/bin/eslint.js . -f json)",
+      "Bash(node -e \"let d='';process.stdin.on\\('data',c=>d+=c\\).on\\('end',\\(\\)=>{const r=JSON.parse\\(d\\);const m={};let e=0,w=0;r.forEach\\(f=>f.messages.forEach\\(x=>{const k=x.ruleId||'parse';m[k]=\\(m[k]||0\\)+1;if\\(x.severity===2\\)e++;else w++;}\\)\\);console.log\\('errors',e,'warnings',w\\);console.log\\(JSON.stringify\\(m\\)\\);}\\)\")",
+      "Bash(timeout 30 npm view helmet version)",
+      "Bash(timeout 20 node dist/main.js)",
+      "Bash(node -e \"let d='';process.stdin.on\\('data',c=>d+=c\\).on\\('end',\\(\\)=>{const r=JSON.parse\\(d\\);r.forEach\\(f=>f.messages.forEach\\(x=>{if\\(x.ruleId==='no-unused-vars'\\)console.log\\(f.filePath.split\\('frontend'\\).pop\\(\\)+':'+x.line+' '+x.message\\);}\\)\\);}\\)\")",
+      "Bash(node -e \"let d='';process.stdin.on\\('data',c=>d+=c\\).on\\('end',\\(\\)=>{const r=JSON.parse\\(d\\);r.forEach\\(f=>f.messages.forEach\\(x=>{if\\(x.ruleId==='preserve-caught-error'\\)console.log\\(f.filePath.split\\('frontend'\\).pop\\(\\)+':'+x.line+' '+x.message\\);}\\)\\);}\\)\")",
+      "Bash(node ../node_modules/eslint/bin/eslint.js --rulesdir /dev/null)",
+      "Bash(node -e \"let d='';process.stdin.on\\('data',c=>d+=c\\).on\\('end',\\(\\)=>{const r=JSON.parse\\(d\\);r.forEach\\(f=>f.messages.forEach\\(x=>{if\\(x.ruleId==='no-undef'\\)console.log\\(f.filePath.split\\('frontend'\\).pop\\(\\)+':'+x.line+':'+x.column+' '+x.message\\);}\\)\\);}\\)\")",
+      "Bash(npm run *)",
+      "Bash(xargs echo \"modules initialized:\")",
+      "Bash(nslookup aws-1-us-west-2.pooler.supabase.com)",
+      "Bash(ping -n 2 aws-1-us-west-2.pooler.supabase.com)",
+      "Bash(timeout 8 bash -c '</dev/tcp/aws-1-us-west-2.pooler.supabase.com/5432')",
+      "Bash(timeout 8 bash -c '</dev/tcp/aws-1-us-west-2.pooler.supabase.com/6543')",
+      "Bash(ls -la .env)",
+      "Bash(ls prisma/migrations)",
+      "Bash(npx prisma *)",
+      "Bash(timeout 10 bash -c '</dev/tcp/aws-1-us-west-2.pooler.supabase.com/5432 && echo \"5432 ABIERTO\"')",
+      "Bash(timeout 10 bash -c '</dev/tcp/aws-1-us-west-2.pooler.supabase.com/6543 && echo \"6543 ABIERTO\"')",
+      "Bash(ping -n 4 8.8.8.8)",
+      "Bash(ping -n 4 aws-1-us-west-2.pooler.supabase.com)",
+      "Bash(npm install *)",
+      "Bash(curl -s -m 15 -X POST http://localhost:3001/api/auth/login -H \"Content-Type: application/json\" -d '{\"email\":\"admin@giftapp.com\",\"password\":\"Admin123!\"}' -o /tmp/login.json -w \"HTTP %{http_code}\\\\n\")",
+      "Bash(sed -E 's/\\(\"access_token\":\"\\)[^\"]+/\\\\1[TOKEN_OCULTO]/' /tmp/login.json)",
+      "Bash(curl -s -m 10 -o /dev/null -w \"HTTP %{http_code}\\\\n\" http://localhost:5173/)",
+      "Bash(curl -s -m 12 -i -X OPTIONS http://localhost:3001/api/auth/login -H \"Origin: http://localhost:5173\" -H \"Access-Control-Request-Method: POST\" -H \"Access-Control-Request-Headers: content-type\")",
+      "Bash(curl -s -m 15 -X POST http://localhost:3001/api/auth/login -H \"Content-Type: application/json\" -d '{\"email\":\"admin@giftapp.com\",\"password\":\"Admin123!\"}')"
+    ]
+  }
+}

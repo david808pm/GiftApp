@@ -7,6 +7,8 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmployeeLoginDto } from './dto/employee-login.dto';
+import { requireEnv, optionalEnv, MIN_SECRET_LENGTH } from '../common/config/env';
+import { assertCampaignWindowOpen } from '../common/utils/campaign-window';
 
 @Injectable()
 export class PublicAuthService {
@@ -80,6 +82,9 @@ export class PublicAuthService {
       };
     }
 
+    // 4.b Enforce the campaign selection window for employees about to choose.
+    assertCampaignWindowOpen(campaign);
+
     // 5. Must have at least one non-deleted beneficiary
     const beneficiaryCount = await this.prisma.beneficiary.count({
       where: { employeeId: employee.id, deletedAt: null },
@@ -129,8 +134,8 @@ export class PublicAuthService {
       type: 'employee',
     };
 
-    const secret = process.env.PUBLIC_JWT_SECRET || process.env.JWT_SECRET;
-    const expiresIn = process.env.PUBLIC_JWT_EXPIRES_IN || '4h';
+    const secret = requireEnv('PUBLIC_JWT_SECRET', MIN_SECRET_LENGTH);
+    const expiresIn = optionalEnv('PUBLIC_JWT_EXPIRES_IN', '4h');
 
     return this.jwtService.sign(payload, {
       secret,

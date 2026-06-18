@@ -1,10 +1,8 @@
 import { useState, useEffect } from 'react';
-import { useOutletContext } from 'react-router-dom';
 import { exportSelectionsToCSV } from '../../api/localStorageService';
 import { formatDate } from '../../utils/dates';
 import {
   giftAppGetSelections,
-  giftAppGetSelectionExportData,
   giftAppDownloadSelectionsExcel,
   giftAppGetCampaigns,
   USE_BACKEND,
@@ -12,7 +10,6 @@ import {
 import EmptyState from '../../components/EmptyState';
 
 export default function Selections() {
-  const { isReadOnly } = useOutletContext() || {};
   const [selections, setSelections] = useState([]);
   const [campaigns, setCampaigns] = useState([]);
   const [filterCampaign, setFilterCampaign] = useState('');

@@ -2,6 +2,8 @@ import {
   IsString,
   IsOptional,
   IsEnum,
+  IsInt,
+  IsISO8601,
   MinLength,
   MaxLength,
   Matches,
@@ -11,18 +13,22 @@ import { CampaignStatus } from '@prisma/client';
 import { IsHexColor } from '../../common/validators/is-hex-color.validator';
 
 export class CreateCampaignDto {
+  @IsInt({ message: 'La empresa es obligatoria.' })
+  companyId: number;
+
   @IsString({ message: 'El nombre es obligatorio.' })
   @MinLength(2, { message: 'El nombre debe tener al menos 2 caracteres.' })
   @MaxLength(180, { message: 'El nombre no puede superar 180 caracteres.' })
   name: string;
 
-  @IsString({ message: 'El slug es obligatorio.' })
+  @IsOptional()
+  @IsString()
   @MinLength(2, { message: 'El slug debe tener al menos 2 caracteres.' })
   @MaxLength(200, { message: 'El slug no puede superar 200 caracteres.' })
   @Matches(/^[a-z0-9-]+$/, {
     message: 'El slug solo puede contener minúsculas, números y guiones.',
   })
-  slug: string;
+  slug?: string;
 
   @IsOptional()
   @IsString()
@@ -59,10 +65,10 @@ export class CreateCampaignDto {
   logoImageUrl?: string;
 
   @IsOptional()
-  @IsString()
+  @IsISO8601({}, { message: 'La fecha de inicio debe ser una fecha válida (ISO 8601).' })
   startsAt?: string;
 
   @IsOptional()
-  @IsString()
+  @IsISO8601({}, { message: 'La fecha de fin debe ser una fecha válida (ISO 8601).' })
   endsAt?: string;
 }

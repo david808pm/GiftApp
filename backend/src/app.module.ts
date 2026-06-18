@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
 import { CampaignsModule } from './campaigns/campaigns.module';
@@ -12,8 +14,15 @@ import { ReportsModule } from './reports/reports.module';
 import { PublicAuthModule } from './public-auth/public-auth.module';
 import { PublicSelectionModule } from './public-selection/public-selection.module';
 import { ImportsModule } from './imports/imports.module';
+import { AdminUsersModule } from './admin-users/admin-users.module';
+import { CompaniesModule } from './companies/companies.module';
 
 @Module({
-  imports: [PrismaModule, AuthModule, CampaignsModule, EmployeesModule, BeneficiariesModule, GiftsModule, SupportRequestsModule, DashboardModule, SelectionsModule, ReportsModule, PublicAuthModule, PublicSelectionModule, ImportsModule],
+  imports: [
+    // Global rate limiting: 100 requests / minute / IP by default.
+    // Stricter per-route limits are applied with @Throttle() on auth endpoints.
+    ThrottlerModule.forRoot([{ ttl: 60000, limit: 100 }]),
+    PrismaModule, AuthModule, CampaignsModule, EmployeesModule, BeneficiariesModule, GiftsModule, SupportRequestsModule, DashboardModule, SelectionsModule, ReportsModule, PublicAuthModule, PublicSelectionModule, ImportsModule, AdminUsersModule, CompaniesModule],
+  providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
 export class AppModule {}

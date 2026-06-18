@@ -38,12 +38,22 @@ async function request(method, path, body = null) {
   try {
     response = await fetch(url, config);
   } catch (networkError) {
-    throw new Error('No se pudo conectar con el servidor. Verifica tu conexión.');
+    throw new Error('No se pudo conectar con el servidor. Verifica tu conexión.', {
+      cause: networkError,
+    });
   }
 
   if (response.status === 401) {
     clearToken();
     throw new Error('Sesión expirada. Inicia sesión nuevamente.');
+  }
+
+  // No content (e.g. 204 from some DELETE endpoints): nothing to parse.
+  if (response.status === 204 || response.headers.get('content-length') === '0') {
+    if (!response.ok) {
+      throw new Error(`Error del servidor (${response.status}).`);
+    }
+    return null;
   }
 
   let data;
@@ -73,7 +83,9 @@ async function uploadRequest(method, path, formData) {
   try {
     response = await fetch(url, { method, headers, body: formData });
   } catch (networkError) {
-    throw new Error('No se pudo conectar con el servidor. Verifica tu conexión.');
+    throw new Error('No se pudo conectar con el servidor. Verifica tu conexión.', {
+      cause: networkError,
+    });
   }
 
   if (response.status === 401) {
@@ -109,7 +121,9 @@ async function downloadBlobRequest(method, path, queryParams = {}) {
   try {
     response = await fetch(url, { method, headers });
   } catch (networkError) {
-    throw new Error('No se pudo conectar con el servidor. Verifica tu conexión.');
+    throw new Error('No se pudo conectar con el servidor. Verifica tu conexión.', {
+      cause: networkError,
+    });
   }
 
   if (response.status === 401) {

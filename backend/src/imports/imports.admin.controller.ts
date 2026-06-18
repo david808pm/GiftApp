@@ -23,7 +23,9 @@ export class ImportsAdminController {
   @Post('employees-beneficiaries')
   @HttpCode(HttpStatus.OK)
   @Roles('SUPER_ADMIN')
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { fileSize: 10 * 1024 * 1024 } }),
+  )
   uploadEmployeesBeneficiaries(
     @UploadedFile() file: Express.Multer.File,
     @Req() req: Request,

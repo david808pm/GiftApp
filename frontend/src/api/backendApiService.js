@@ -185,7 +185,7 @@ export async function downloadSelectionsExcel(query = {}) {
   return apiClient.downloadBlob('/admin/reports/selections/export-xlsx', query);
 }
 
-// ── Import ─────────────────────────────────────────────────
+// ── Import ────────────────────────────────────────────────
 
 export async function importEmployeesBeneficiaries(file) {
   const formData = new FormData();
@@ -193,7 +193,39 @@ export async function importEmployeesBeneficiaries(file) {
   return apiClient.upload('/admin/import/employees-beneficiaries', formData);
 }
 
-// ── Public ─────────────────────────────────────────────────
+// ── Admin Users ────────────────────────────────────────────
+
+export async function fetchAdminUsers() {
+  return apiClient.get('/admin/users');
+}
+
+export async function createAdminUser(data) {
+  return apiClient.post('/admin/users', data);
+}
+
+export async function updateAdminUser(id, data) {
+  return apiClient.patch(`/admin/users/${id}`, data);
+}
+
+export async function changeAdminUserPassword(id, password) {
+  return apiClient.patch(`/admin/users/${id}/password`, { password });
+}
+
+export async function updateAdminUserStatus(id, isActive) {
+  return apiClient.patch(`/admin/users/${id}/status`, { isActive });
+}
+
+// ── Companies ─────────────────────────────────────────────
+
+export async function fetchCompanies() {
+  return apiClient.get('/admin/companies');
+}
+
+export async function createCompany(data) {
+  return apiClient.post('/admin/companies', data);
+}
+
+// ── Public ──────────────────────────────────────────────────
 
 export async function getPublicCampaignBySlug(slug) {
   return apiClient.get(`/public/campaigns/${slug}`);
@@ -237,7 +269,9 @@ async function publicRequest(method, path, body = null) {
   try {
     response = await fetch(url, config);
   } catch (networkError) {
-    throw new Error('No se pudo conectar con el servidor. Verifica tu conexión.');
+    throw new Error('No se pudo conectar con el servidor. Verifica tu conexión.', {
+      cause: networkError,
+    });
   }
 
   if (response.status === 401) {

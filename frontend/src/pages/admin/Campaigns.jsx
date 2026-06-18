@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useOutletContext } from 'react-router-dom';
-import { validateRequired, validateSlug } from '../../utils/validators';
+import { validateRequired } from '../../utils/validators';
 import { formatDate } from '../../utils/dates';
 import {
   giftAppGetCampaigns,
@@ -8,6 +8,8 @@ import {
   giftAppUpdateCampaign,
   giftAppDeleteCampaign,
   giftAppUploadCampaignLogo,
+  giftAppGetCompanies,
+  giftAppCreateCompany,
   USE_BACKEND,
 } from '../../api/giftAppService';
 import Modal from '../../components/Modal';
@@ -18,8 +20,8 @@ import ConfirmDialog from '../../components/ConfirmDialog';
 // TODO: Move referential integrity checks to server-side before production.
 
 const EMPTY_CAMPAIGN = {
+  companyId: '',
   name: '',
-  slug: '',
   welcomeText: '',
   rulesText: '',
   status: 'ACTIVE',
@@ -28,14 +30,23 @@ const EMPTY_CAMPAIGN = {
   logoImageUrl: '',
 };
 
+const EMPTY_COMPANY = {
+  name: '',
+};
+
 export default function Campaigns() {
   const { isReadOnly } = useOutletContext() || {};
   const [campaigns, setCampaigns] = useState([]);
+  const [companies, setCompanies] = useState([]);
   const [search, setSearch] = useState('');
+  const [filterCompany, setFilterCompany] = useState('');
   const [showModal, setShowModal] = useState(false);
+  const [showCompanyModal, setShowCompanyModal] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(EMPTY_CAMPAIGN);
+  const [companyForm, setCompanyForm] = useState(EMPTY_COMPANY);
   const [errors, setErrors] = useState({});
+  const [companyErrors, setCompanyErrors] = useState({});
   const { toasts, addToast, removeToast } = useToast();
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [loading, setLoading] = useState(USE_BACKEND);
@@ -46,8 +57,12 @@ export default function Campaigns() {
   const loadCampaigns = async () => {
     if (USE_BACKEND) setLoading(true);
     try {
-      const data = await giftAppGetCampaigns();
-      setCampaigns(data);
+      const [campaignsData, companiesData] = await Promise.all([
+        giftAppGetCampaigns(),
+        USE_BACKEND ? giftAppGetCompanies() : Promise.resolve([]),
+      ]);
+      setCampaigns(campaignsData);
+      setCompanies(companiesData);
     } catch (err) {
       if (USE_BACKEND) addToast(err.message || 'Error al cargar las campañas.', 'error');
     } finally {
@@ -59,15 +74,18 @@ export default function Campaigns() {
     loadCampaigns();
   }, []);
 
-  const filtered = campaigns.filter(
-    (c) =>
+  const filtered = campaigns.filter((c) => {
+    const matchesSearch =
       c.name.toLowerCase().includes(search.toLowerCase()) ||
-      c.slug.toLowerCase().includes(search.toLowerCase())
-  );
+      c.slug.toLowerCase().includes(search.toLowerCase());
+    const matchesCompany =
+      !filterCompany || String(c.companyId) === filterCompany;
+    return matchesSearch && matchesCompany;
+  });
 
   const openCreate = () => {
     setEditing(null);
-    setForm(EMPTY_CAMPAIGN);
+    setForm({ ...EMPTY_CAMPAIGN, companyId: companies[0]?.id || '' });
     setErrors({});
     setLogoFile(null);
     setShowModal(true);
@@ -75,28 +93,54 @@ export default function Campaigns() {
 
   const openEdit = (campaign) => {
     setEditing(campaign);
-    setForm({ ...campaign });
+    setForm({
+      companyId: campaign.companyId || '',
+      name: campaign.name,
+      welcomeText: campaign.welcomeText || '',
+      rulesText: campaign.rulesText || '',
+      status: campaign.status,
+      logoText: campaign.logoText || '',
+      primaryColor: campaign.primaryColor || '#2563eb',
+      logoImageUrl: campaign.logoImageUrl || '',
+    });
     setErrors({});
     setLogoFile(null);
     setShowModal(true);
   };
 
+  const openCreateCompany = () => {
+    setCompanyForm(EMPTY_COMPANY);
+    setCompanyErrors({});
+    setShowCompanyModal(true);
+  };
+
+  const handleCreateCompany = async () => {
+    const errs = {};
+    if (!companyForm.name || companyForm.name.trim().length < 2) {
+      errs.name = 'El nombre debe tener al menos 2 caracteres.';
+    }
+    setCompanyErrors(errs);
+    if (Object.keys(errs).length > 0) return;
+
+    setSaving(true);
+    try {
+      const company = await giftAppCreateCompany({ name: companyForm.name });
+      await loadCampaigns();
+      setForm((prev) => ({ ...prev, companyId: company.id }));
+      setShowCompanyModal(false);
+      addToast('Empresa creada.');
+    } catch (err) {
+      addToast(err.message || 'Error al crear la empresa.', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const validate = () => {
     const errs = {};
-    const nameErr = validateRequired(form.name, 'Nombre');
+    const nameErr = validateRequired(form.name, 'Nombre de la campaña');
     if (nameErr) errs.name = nameErr;
-    const slugErr = validateSlug(form.slug);
-    if (slugErr) errs.slug = slugErr;
-
-    if (!editing) {
-      const existing = campaigns.find((c) => c.slug === form.slug);
-      if (existing) errs.slug = 'El slug debe ser único.';
-    } else {
-      const existing = campaigns.find(
-        (c) => c.slug === form.slug && c.id !== editing.id
-      );
-      if (existing) errs.slug = 'El slug debe ser único.';
-    }
+    if (!form.companyId) errs.companyId = 'La empresa es obligatoria.';
 
     setErrors(errs);
     return Object.keys(errs).length === 0;
@@ -182,6 +226,17 @@ export default function Campaigns() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
+          <select
+            value={filterCompany}
+            onChange={(e) => setFilterCompany(e.target.value)}
+          >
+            <option value="">Todas las empresas</option>
+            {companies.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
         </div>
 
         {filtered.length === 0 ? (
@@ -192,6 +247,7 @@ export default function Campaigns() {
               <thead>
                 <tr>
                   <th>Nombre</th>
+                  <th>Empresa</th>
                   <th>Slug</th>
                   <th>Estado</th>
                   <th>Creado</th>
@@ -202,7 +258,18 @@ export default function Campaigns() {
                 {filtered.map((c) => (
                   <tr key={c.id}>
                     <td style={{ fontWeight: 500 }}>{c.name}</td>
-                    <td><code>{c.slug}</code></td>
+                    <td>{c.company?.name || <span style={{ color: 'var(--gray-400)' }}>Sin empresa</span>}</td>
+                    <td>
+                      <a
+                        href={`${window.location.origin}/campaign/${c.slug}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{ color: 'var(--primary)', textDecoration: 'none', fontSize: '0.8125rem' }}
+                        title={`${window.location.origin}/campaign/${c.slug}`}
+                      >
+                        {window.location.origin}/campaign/{c.slug}
+                      </a>
+                    </td>
                     <td>
                       <span className={`badge badge-${c.status.toLowerCase()}`}>
                         {c.status === 'ACTIVE' ? 'Activo' : 'Cerrado'}
@@ -251,22 +318,74 @@ export default function Campaigns() {
         }
       >
         <div className="form-group">
-          <label>Nombre</label>
+          <label>Empresa</label>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <select
+              value={form.companyId}
+              onChange={(e) => updateField('companyId', e.target.value)}
+              style={{ flex: 1 }}
+            >
+              <option value="">Seleccionar empresa</option>
+              {companies.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+            {!isReadOnly && (
+              <button
+                type="button"
+                className="btn btn-outline btn-sm"
+                onClick={openCreateCompany}
+                style={{ whiteSpace: 'nowrap' }}
+              >
+                + Empresa
+              </button>
+            )}
+          </div>
+          {errors.companyId && <p className="form-error">{errors.companyId}</p>}
+        </div>
+        <div className="form-group">
+          <label>Nombre de la Campaña</label>
           <input
             value={form.name}
             onChange={(e) => updateField('name', e.target.value)}
           />
           {errors.name && <p className="form-error">{errors.name}</p>}
         </div>
-        <div className="form-group">
-          <label>Slug</label>
-          <input
-            value={form.slug}
-            onChange={(e) => updateField('slug', e.target.value)}
-            placeholder="ej. navidad-2026"
-          />
-          {errors.slug && <p className="form-error">{errors.slug}</p>}
-        </div>
+        {!editing && form.companyId && form.name && companies.find((c) => String(c.id) === String(form.companyId)) && (
+          <div className="form-group">
+            <label style={{ fontSize: '0.75rem', color: 'var(--gray-500)' }}>
+              URL pública generada
+            </label>
+            <p style={{ fontSize: '0.875rem', color: 'var(--gray-700)', margin: '4px 0 0 0' }}>
+              <code>
+                /campaign/{companies.find((c) => String(c.id) === String(form.companyId))?.slug || ''}
+                {form.name
+                  ? '-' +
+                    form.name
+                      .toLowerCase()
+                      .normalize('NFD')
+                      .replace(/[\u0300-\u036f]/g, '')
+                      .replace(/[^a-z0-9\s-]/g, '')
+                      .replace(/\s+/g, '-')
+                      .replace(/-+/g, '-')
+                      .replace(/^-|-$/g, '')
+                  : ''}
+              </code>
+            </p>
+          </div>
+        )}
+        {editing && (
+          <div className="form-group">
+            <label style={{ fontSize: '0.75rem', color: 'var(--gray-500)' }}>
+              URL pública
+            </label>
+            <p style={{ fontSize: '0.875rem', color: 'var(--gray-700)', margin: '4px 0 0 0' }}>
+              <code>/campaign/{editing.slug}</code>
+            </p>
+          </div>
+        )}
         <div className="form-group">
           <label>Texto de Bienvenida</label>
           <textarea
@@ -343,6 +462,35 @@ export default function Campaigns() {
             </p>
           )}
         </div>
+      </Modal>
+
+      <Modal
+        isOpen={showCompanyModal}
+        onClose={() => setShowCompanyModal(false)}
+        title="Crear Empresa"
+        footer={
+          <>
+            <button className="btn btn-outline" onClick={() => setShowCompanyModal(false)} disabled={saving}>
+              Cancelar
+            </button>
+            <button className="btn btn-primary" onClick={handleCreateCompany} disabled={saving}>
+              {saving ? 'Creando...' : 'Crear'}
+            </button>
+          </>
+        }
+      >
+        <div className="form-group">
+          <label>Nombre de la Empresa</label>
+          <input
+            value={companyForm.name}
+            onChange={(e) => setCompanyForm({ name: e.target.value })}
+            placeholder="ej. Coca-Cola"
+          />
+          {companyErrors.name && <p className="form-error">{companyErrors.name}</p>}
+        </div>
+        <p style={{ fontSize: '0.8125rem', color: 'var(--gray-500)', marginTop: 8 }}>
+          El slug se generará automáticamente del nombre.
+        </p>
       </Modal>
 
       <ConfirmDialog

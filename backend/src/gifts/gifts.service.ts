@@ -24,11 +24,15 @@ export class GiftsService {
     updatedBy: { select: { id: true, name: true, email: true } },
   };
 
-  private async syncImages(giftId: number, imageUrls: string[] | undefined) {
+  private async syncImages(
+    tx: Prisma.TransactionClient,
+    giftId: number,
+    imageUrls: string[] | undefined,
+  ) {
     if (imageUrls === undefined || imageUrls.length === 0) return;
 
-    // Delete existing images and re-insert
-    await this.prisma.giftImage.deleteMany({ where: { giftId } });
+    // Delete existing images and re-insert atomically (within the caller's tx).
+    await tx.giftImage.deleteMany({ where: { giftId } });
 
     const imageRecords = imageUrls.map((url, i) => ({
       giftId,
@@ -37,10 +41,7 @@ export class GiftsService {
       isPrimary: i === 0,
     }));
 
-    // TODO: batch create when supported
-    for (const img of imageRecords) {
-      await this.prisma.giftImage.create({ data: img });
-    }
+    await tx.giftImage.createMany({ data: imageRecords });
   }
 
   private async validateCampaign(campaignId: number) {
@@ -96,9 +97,9 @@ export class GiftsService {
 
     if (search) {
       where.OR = [
-        { name: { contains: search } },
-        { reference: { contains: search } },
-        { campaign: { name: { contains: search } } },
+        { name: { contains: search, mode: 'insensitive' } },
+        { reference: { contains: search, mode: 'insensitive' } },
+        { campaign: { name: { contains: search, mode: 'insensitive' } } },
       ];
     }
 
@@ -108,6 +109,14 @@ export class GiftsService {
         throw new ForbiddenException('No tienes compañía asignada.');
       }
       where.campaign = { companyId: user.companyId };
+    }
+
+    // Hide gifts whose parent campaign was soft-deleted.
+    if (includeDeleted !== 'true') {
+      where.campaign = {
+        ...((where.campaign as Prisma.CampaignWhereInput) || {}),
+        deletedAt: null,
+      };
     }
 
     return this.prisma.gift.findMany({
@@ -177,10 +186,35 @@ export class GiftsService {
     }
     // If soft-deleted, restore
     if (existing && existing.deletedAt) {
-      const restored = await this.prisma.gift.update({
-        where: { id: existing.id },
+      await this.prisma.$transaction(async (tx) => {
+        await tx.gift.update({
+          where: { id: existing.id },
+          data: {
+            name: dto.name.trim(),
+            shortDescription: dto.shortDescription?.trim(),
+            technicalDescription: dto.technicalDescription?.trim(),
+            dimensions: dto.dimensions?.trim(),
+            stock: dto.stock ?? 0,
+            minAge,
+            maxAge,
+            allowedGender: dto.allowedGender ?? 'all',
+            status: dto.status ?? 'ACTIVE',
+            deletedAt: null,
+            updatedBy: { connect: { id: adminUserId } },
+          },
+        });
+        await this.syncImages(tx, existing.id, dto.imageUrls);
+      });
+      // TODO: AuditLog — log gift restore when AuditLog module is implemented.
+      return this.findOne(existing.id);
+    }
+
+    const giftId = await this.prisma.$transaction(async (tx) => {
+      const gift = await tx.gift.create({
         data: {
+          campaignId: dto.campaignId,
           name: dto.name.trim(),
+          reference,
           shortDescription: dto.shortDescription?.trim(),
           technicalDescription: dto.technicalDescription?.trim(),
           dimensions: dto.dimensions?.trim(),
@@ -189,39 +223,16 @@ export class GiftsService {
           maxAge,
           allowedGender: dto.allowedGender ?? 'all',
           status: dto.status ?? 'ACTIVE',
-          deletedAt: null,
-          updatedBy: { connect: { id: adminUserId } },
+          createdById: adminUserId,
         },
-        include: this.giftInclude,
       });
-      await this.syncImages(restored.id, dto.imageUrls);
-      // TODO: AuditLog — log gift restore when AuditLog module is implemented.
-      return this.findOne(restored.id);
-    }
-
-    const gift = await this.prisma.gift.create({
-      data: {
-        campaignId: dto.campaignId,
-        name: dto.name.trim(),
-        reference,
-        shortDescription: dto.shortDescription?.trim(),
-        technicalDescription: dto.technicalDescription?.trim(),
-        dimensions: dto.dimensions?.trim(),
-        stock: dto.stock ?? 0,
-        minAge,
-        maxAge,
-        allowedGender: dto.allowedGender ?? 'all',
-        status: dto.status ?? 'ACTIVE',
-        createdById: adminUserId,
-      },
-      include: this.giftInclude,
+      await this.syncImages(tx, gift.id, dto.imageUrls);
+      return gift.id;
     });
-
-    await this.syncImages(gift.id, dto.imageUrls);
 
     // TODO: AuditLog — log gift creation when AuditLog module is implemented.
 
-    return this.findOne(gift.id);
+    return this.findOne(giftId);
   }
 
   // ── Admin: update ────────────────────────────────────────
@@ -276,16 +287,31 @@ export class GiftsService {
 
     data.updatedBy = { connect: { id: adminUserId } };
 
-    const updated = await this.prisma.gift.update({
-      where: { id },
-      data,
-      include: this.giftInclude,
-    });
+    // Apply the update, stock-movement audit and image sync atomically.
+    await this.prisma.$transaction(async (tx) => {
+      await tx.gift.update({ where: { id }, data });
 
-    // Sync images only if imageUrls is explicitly provided
-    if (dto.imageUrls !== undefined) {
-      await this.syncImages(id, dto.imageUrls);
-    }
+      // Record a stock movement whenever stock is explicitly changed.
+      if (dto.stock !== undefined && dto.stock !== gift.stock) {
+        await tx.stockMovement.create({
+          data: {
+            giftId: id,
+            campaignId,
+            movementType: 'ADMIN_ADJUSTMENT',
+            quantityChange: dto.stock - gift.stock,
+            previousStock: gift.stock,
+            newStock: dto.stock,
+            reason: 'Ajuste manual de stock',
+            createdById: adminUserId,
+          },
+        });
+      }
+
+      // Sync images only if imageUrls is explicitly provided.
+      if (dto.imageUrls !== undefined) {
+        await this.syncImages(tx, id, dto.imageUrls);
+      }
+    });
 
     // TODO: AuditLog — log gift update when AuditLog module is implemented.
 

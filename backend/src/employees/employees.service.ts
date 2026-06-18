@@ -36,9 +36,9 @@ export class EmployeesService {
 
     if (search) {
       where.OR = [
-        { fullName: { contains: search } },
-        { documentId: { contains: search } },
-        { email: { contains: search } },
+        { fullName: { contains: search, mode: 'insensitive' } },
+        { documentId: { contains: search, mode: 'insensitive' } },
+        { email: { contains: search, mode: 'insensitive' } },
       ];
     }
 
@@ -48,6 +48,14 @@ export class EmployeesService {
         throw new ForbiddenException('No tienes compañía asignada.');
       }
       where.campaign = { companyId: user.companyId };
+    }
+
+    // Hide employees whose parent campaign was soft-deleted.
+    if (includeDeleted !== 'true') {
+      where.campaign = {
+        ...((where.campaign as Prisma.CampaignWhereInput) || {}),
+        deletedAt: null,
+      };
     }
 
     return this.prisma.employee.findMany({
@@ -93,6 +101,15 @@ export class EmployeesService {
   // ── Admin: create ────────────────────────────────────────
 
   async create(dto: CreateEmployeeDto, adminUserId: number) {
+    // CONFIRMED is derived exclusively from the gift-selection flow; it must
+    // never be set manually, or the employee would be counted as confirmed
+    // without an associated Selection (and could not log in to choose).
+    if (dto.status === 'CONFIRMED') {
+      throw new BadRequestException(
+        'El estado "Confirmado" se asigna automáticamente al confirmar la selección y no puede establecerse manualmente.',
+      );
+    }
+
     const documentId = dto.documentId.trim();
     const email = dto.email?.trim().toLowerCase() || null;
     const fullName = dto.fullName.trim();
@@ -143,7 +160,7 @@ export class EmployeesService {
           deletedAt: null,
           createdById: adminUserId,
           updatedById: adminUserId,
-          confirmedAt: dto.status === 'CONFIRMED' ? new Date() : null,
+          confirmedAt: null,
         },
         include: {
           campaign: { select: { id: true, name: true, slug: true } },
@@ -163,7 +180,7 @@ export class EmployeesService {
         shippingAddress,
         shippingCity,
         status: dto.status || 'PENDING',
-        confirmedAt: dto.status === 'CONFIRMED' ? new Date() : null,
+        confirmedAt: null,
         createdById: adminUserId,
       },
       include: {
@@ -252,10 +269,14 @@ export class EmployeesService {
       data.documentId = newDocId;
     }
 
-    // status
+    // status — block manual transition INTO CONFIRMED (only the selection flow
+    // may confirm). Already-confirmed employees keep their status so other
+    // fields can still be edited.
     if (dto.status !== undefined) {
-      if (dto.status === 'CONFIRMED' && !employee.confirmedAt) {
-        data.confirmedAt = new Date();
+      if (dto.status === 'CONFIRMED' && employee.status !== 'CONFIRMED') {
+        throw new BadRequestException(
+          'El estado "Confirmado" se asigna automáticamente al confirmar la selección y no puede establecerse manualmente.',
+        );
       }
       data.status = dto.status;
     }

@@ -93,6 +93,32 @@ export default function SupportRequests() {
     }
   };
 
+  if (USE_BACKEND && loading) {
+    return (
+      <div>
+        <div className="admin-topbar"><h1>Solicitudes de Soporte</h1></div>
+        <div className="admin-body">
+          <p style={{ color: 'var(--gray-500)', fontSize: '0.9375rem' }}>
+            Cargando solicitudes de soporte...
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (USE_BACKEND && error) {
+    return (
+      <div>
+        <div className="admin-topbar"><h1>Solicitudes de Soporte</h1></div>
+        <div className="admin-body">
+          <p style={{ color: 'var(--danger)', fontSize: '0.9375rem' }}>
+            {error}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div>
       <div className="admin-topbar">
@@ -142,33 +168,7 @@ export default function SupportRequests() {
                   const emp = r.employee || getEmployee(r.employeeId);
                   const campaignName = r.campaign?.name || getCampaignName(r.campaignId);
                   const displayDocId = r.employee?.documentId || r.documentId || '-';
-  if (USE_BACKEND && loading) {
-    return (
-      <div>
-        <div className="admin-topbar"><h1>Solicitudes de Soporte</h1></div>
-        <div className="admin-body">
-          <p style={{ color: 'var(--gray-500)', fontSize: '0.9375rem' }}>
-            Cargando solicitudes de soporte...
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  if (USE_BACKEND && error) {
-    return (
-      <div>
-        <div className="admin-topbar"><h1>Solicitudes de Soporte</h1></div>
-        <div className="admin-body">
-          <p style={{ color: 'var(--danger)', fontSize: '0.9375rem' }}>
-            {error}
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  return (
+                  return (
                     <tr key={r.id}>
                       <td>{campaignName}</td>
                       <td>{displayDocId}</td>

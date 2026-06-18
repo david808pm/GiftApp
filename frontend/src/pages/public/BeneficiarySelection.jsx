@@ -59,7 +59,11 @@ export default function BeneficiarySelection() {
       if (USE_BACKEND) {
         setLoading(true);
         try {
-          const sessionData = await giftAppGetPublicEmployeeSession();
+          const [sessionData, camp] = await Promise.all([
+            giftAppGetPublicEmployeeSession(),
+            giftAppGetPublicCampaignBySlug(slug),
+          ]);
+
           if (!sessionData) {
             navigate(`/campaign/${slug}/login`);
             return;
@@ -71,7 +75,6 @@ export default function BeneficiarySelection() {
             return;
           }
 
-          const camp = await giftAppGetPublicCampaignBySlug(slug);
           if (!camp || camp.status !== 'ACTIVE') {
             navigate(`/campaign/${slug}/login`);
             return;

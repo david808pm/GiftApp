@@ -38,9 +38,9 @@ export class BeneficiariesService {
 
     if (search) {
       where.OR = [
-        { fullName: { contains: search } },
-        { employee: { fullName: { contains: search } } },
-        { employee: { documentId: { contains: search } } },
+        { fullName: { contains: search, mode: 'insensitive' } },
+        { employee: { fullName: { contains: search, mode: 'insensitive' } } },
+        { employee: { documentId: { contains: search, mode: 'insensitive' } } },
       ];
     }
 
@@ -52,6 +52,19 @@ export class BeneficiariesService {
       where.employee = {
         ...((where.employee as Prisma.EmployeeWhereInput) || {}),
         campaign: { companyId: user.companyId },
+      };
+    }
+
+    // Hide beneficiaries whose parent employee or campaign was soft-deleted.
+    if (includeDeleted !== 'true') {
+      const existingEmployee = (where.employee as Prisma.EmployeeWhereInput) || {};
+      where.employee = {
+        ...existingEmployee,
+        deletedAt: null,
+        campaign: {
+          ...((existingEmployee.campaign as Prisma.CampaignWhereInput) || {}),
+          deletedAt: null,
+        },
       };
     }
 
@@ -124,6 +137,13 @@ export class BeneficiariesService {
     if (!employee || employee.deletedAt) {
       throw new NotFoundException('El empleado seleccionado no existe.');
     }
+    // A confirmed employee already has a selection; a new beneficiary would be
+    // left without a SelectionItem, breaking the one-gift-per-beneficiary rule.
+    if (employee.status === 'CONFIRMED') {
+      throw new ForbiddenException(
+        'No se pueden agregar beneficiarios a un empleado con selección confirmada.',
+      );
+    }
 
     // TODO: AuditLog — log beneficiary creation when AuditLog module is implemented.
 
@@ -180,6 +200,12 @@ export class BeneficiariesService {
       });
       if (!employee || employee.deletedAt) {
         throw new NotFoundException('El empleado seleccionado no existe.');
+      }
+      // Cannot move a beneficiary onto an already-confirmed employee either.
+      if (employee.status === 'CONFIRMED') {
+        throw new ForbiddenException(
+          'No se puede asignar el beneficiario a un empleado con selección confirmada.',
+        );
       }
       data.employee = { connect: { id: dto.employeeId } };
     }

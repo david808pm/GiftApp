@@ -2,6 +2,8 @@
 // Proxy que decide entre backend real (NestJS) y localStorage demo.
 // Controlado por VITE_USE_BACKEND en .env.
 
+import { getCache, setCache, clearCache } from '../utils/simpleCache';
+
 const USE_BACKEND = import.meta.env.VITE_USE_BACKEND === 'true';
 
 // ═══════════════════════════════════════════════════════════
@@ -104,6 +106,7 @@ export async function giftAppGetDashboardStats() {
 
   return {
     campaigns: campaigns.length,
+    companies: 0,
     employees: employees.length,
     beneficiaries: beneficiaries.length,
     gifts: gifts.length,
@@ -131,8 +134,8 @@ export async function giftAppCreateCampaign(data) {
   if (USE_BACKEND) {
     const { createCampaign } = await getBackendAuth();
     const payload = {
+      companyId: Number(data.companyId),
       name: data.name,
-      slug: data.slug,
       welcomeText: data.welcomeText,
       rulesText: data.rulesText,
       status: data.status,
@@ -155,7 +158,6 @@ export async function giftAppUpdateCampaign(id, data) {
     const { updateCampaign } = await getBackendAuth();
     const payload = {
       name: data.name,
-      slug: data.slug,
       welcomeText: data.welcomeText,
       rulesText: data.rulesText,
       status: data.status,
@@ -396,15 +398,25 @@ export async function giftAppDeleteBeneficiary(id) {
 // Gifts
 // ═══════════════════════════════════════════════════════════
 
-export async function giftAppGetGifts() {
+export async function giftAppGetGifts(campaignId = null) {
+  const cacheKey = campaignId ? `gifts_campaign_${campaignId}` : 'gifts_all';
+  const cached = getCache(cacheKey);
+  if (cached) return cached;
+
+  let gifts;
   if (USE_BACKEND) {
     const { fetchGifts, mapGiftFromApi } = await getBackendAuth();
-    const gifts = await fetchGifts();
-    return gifts.map(mapGiftFromApi);
+    const query = campaignId ? { campaignId } : {};
+    const fetched = await fetchGifts(query);
+    gifts = fetched.map(mapGiftFromApi);
+  } else {
+    const { getData, KEYS } = await getLocalAuth();
+    const allGifts = getData(KEYS.GIFTS);
+    gifts = campaignId ? allGifts.filter(g => g.campaignId === campaignId) : allGifts;
   }
 
-  const { getData, KEYS } = await getLocalAuth();
-  return getData(KEYS.GIFTS);
+  setCache(cacheKey, gifts, 30000); // 30s TTL
+  return gifts;
 }
 
 export async function giftAppCreateGift(data) {
@@ -554,13 +566,21 @@ export async function giftAppDownloadSelectionsExcel(params = {}) {
 // ═══════════════════════════════════════════════════════════
 
 export async function giftAppGetPublicCampaignBySlug(slug) {
+  const cacheKey = `campaign_${slug}`;
+  const cached = getCache(cacheKey);
+  if (cached) return cached;
+
+  let campaign;
   if (USE_BACKEND) {
     const { getPublicCampaignBySlug } = await getBackendAuth();
-    return await getPublicCampaignBySlug(slug);
+    campaign = await getPublicCampaignBySlug(slug);
+  } else {
+    const { findCampaignBySlug } = await getLocalAuth();
+    campaign = findCampaignBySlug(slug);
   }
 
-  const { findCampaignBySlug } = await getLocalAuth();
-  return findCampaignBySlug(slug);
+  setCache(cacheKey, campaign, 60000); // 60s TTL
+  return campaign;
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -678,6 +698,79 @@ export async function giftAppCreatePublicSupportRequest(data) {
 
   const { createSupportRequest } = await getLocalAuth();
   return createSupportRequest(data);
+}
+
+// ═══════════════════════════════════════════════════════════
+// Admin Users
+// ═══════════════════════════════════════════════════════════
+
+export async function giftAppGetAdminUsers() {
+  if (USE_BACKEND) {
+    const { fetchAdminUsers } = await getBackendAuth();
+    return await fetchAdminUsers();
+  }
+  return [];
+}
+
+export async function giftAppCreateAdminUser(data) {
+  if (USE_BACKEND) {
+    const { createAdminUser } = await getBackendAuth();
+    return await createAdminUser(data);
+  }
+  throw new Error('La gestión de usuarios solo está disponible en modo backend.');
+}
+
+export async function giftAppUpdateAdminUser(id, data) {
+  if (USE_BACKEND) {
+    const { updateAdminUser } = await getBackendAuth();
+    return await updateAdminUser(id, data);
+  }
+  throw new Error('La gestión de usuarios solo está disponible en modo backend.');
+}
+
+export async function giftAppChangeAdminUserPassword(id, password) {
+  if (USE_BACKEND) {
+    const { changeAdminUserPassword } = await getBackendAuth();
+    return await changeAdminUserPassword(id, password);
+  }
+  throw new Error('La gestión de usuarios solo está disponible en modo backend.');
+}
+
+export async function giftAppUpdateAdminUserStatus(id, isActive) {
+  if (USE_BACKEND) {
+    const { updateAdminUserStatus } = await getBackendAuth();
+    return await updateAdminUserStatus(id, isActive);
+  }
+  throw new Error('La gestión de usuarios solo está disponible en modo backend.');
+}
+
+// ═══════════════════════════════════════════════════════════
+// Companies
+// ═══════════════════════════════════════════════════════════
+
+export async function giftAppGetCompanies() {
+  const cacheKey = 'companies';
+  const cached = getCache(cacheKey);
+  if (cached) return cached;
+
+  let companies;
+  if (USE_BACKEND) {
+    const { fetchCompanies } = await getBackendAuth();
+    companies = await fetchCompanies();
+  } else {
+    companies = [];
+  }
+
+  setCache(cacheKey, companies, 60000); // 60s TTL
+  return companies;
+}
+
+export async function giftAppCreateCompany(data) {
+  if (USE_BACKEND) {
+    const { createCompany } = await getBackendAuth();
+    return await createCompany(data);
+  }
+  throw new Error('La gestión de empresas solo está disponible en modo backend.');
 }
 
 // ═══════════════════════════════════════════════════════════

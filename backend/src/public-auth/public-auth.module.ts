@@ -4,13 +4,14 @@ import { PassportModule } from '@nestjs/passport';
 import { PublicAuthService } from './public-auth.service';
 import { PublicAuthController } from './public-auth.controller';
 import { PublicEmployeeJwtStrategy } from './strategies/public-employee-jwt.strategy';
+import { requireEnv, optionalEnv, MIN_SECRET_LENGTH } from '../common/config/env';
 
 @Module({
   imports: [
     PassportModule.register({ defaultStrategy: 'public-employee-jwt' }),
     JwtModule.register({
-      secret: process.env.PUBLIC_JWT_SECRET || process.env.JWT_SECRET || 'fallback',
-      signOptions: { expiresIn: '4h' },
+      secret: requireEnv('PUBLIC_JWT_SECRET', MIN_SECRET_LENGTH),
+      signOptions: { expiresIn: optionalEnv('PUBLIC_JWT_EXPIRES_IN', '4h') as any },
     }),
   ],
   controllers: [PublicAuthController],

@@ -89,6 +89,10 @@ export default function AdminDashboard() {
             <div className="stat-label">Campañas</div>
           </div>
           <div className="stat-card">
+            <div className="stat-value">{stats.companies ?? 0}</div>
+            <div className="stat-label">Empresas</div>
+          </div>
+          <div className="stat-card">
             <div className="stat-value">{stats.employees}</div>
             <div className="stat-label">Empleados</div>
           </div>

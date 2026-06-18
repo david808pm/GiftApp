@@ -9,6 +9,7 @@ import {
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { PublicAuthService } from './public-auth.service';
 import { EmployeeLoginDto } from './dto/employee-login.dto';
 import { PublicEmployeeJwtGuard } from './guards/public-employee-jwt.guard';
@@ -18,6 +19,8 @@ import { Request } from 'express';
 export class PublicAuthController {
   constructor(private readonly publicAuthService: PublicAuthService) {}
 
+  // Brute-force / enumeration protection: 5 attempts per minute per IP.
+  @Throttle({ default: { ttl: 60000, limit: 5 } })
   @Post('campaigns/:slug/employee-login')
   @HttpCode(HttpStatus.OK)
   employeeLogin(@Param('slug') slug: string, @Body() dto: EmployeeLoginDto) {

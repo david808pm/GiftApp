@@ -1,19 +1,53 @@
-import { Injectable, ForbiddenException } from '@nestjs/common';
+import { Injectable, ForbiddenException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
+import { DashboardCache } from './dashboard.cache';
 
 @Injectable()
 export class DashboardService {
+  private readonly cache = new DashboardCache();
+  private readonly logger = new Logger(DashboardService.name);
+
   constructor(private readonly prisma: PrismaService) {}
 
   async getStats(user?: { role: string; companyId?: number }) {
-    // Build base filters for company scoping
+    const cacheKey = `${user?.role || 'public'}_${user?.companyId || 'all'}`;
+    const cached = this.cache.get(cacheKey);
+    
+    if (cached) {
+      this.logger.debug(`Cache hit for key=${cacheKey}`);
+      return cached;
+    }
+
+    this.logger.debug(`Cache miss for key=${cacheKey}, calculating...`);
+    // Build base filters for company scoping and exclude soft-deleted campaigns
     const campaignFilter: Prisma.CampaignWhereInput = { deletedAt: null };
-    const employeeFilter: Prisma.EmployeeWhereInput = { deletedAt: null };
-    const beneficiaryFilter: Prisma.BeneficiaryWhereInput = { deletedAt: null };
-    const giftFilter: Prisma.GiftWhereInput = { deletedAt: null };
-    const supportFilter: Prisma.SupportRequestWhereInput = {};
-    const selectionFilter: Prisma.SelectionWhereInput = {};
+    const employeeFilter: Prisma.EmployeeWhereInput = {
+      deletedAt: null,
+      campaign: { deletedAt: null },
+    };
+    const beneficiaryFilter: Prisma.BeneficiaryWhereInput = {
+      deletedAt: null,
+      employee: {
+        deletedAt: null,
+        campaign: { deletedAt: null },
+      },
+    };
+    const giftFilter: Prisma.GiftWhereInput = {
+      deletedAt: null,
+      campaign: { deletedAt: null },
+    };
+    const supportFilter: Prisma.SupportRequestWhereInput = {
+      campaignId: { not: null },
+      campaign: { deletedAt: null },
+    };
+    const selectionFilter: Prisma.SelectionWhereInput = {
+      campaign: { deletedAt: null },
+    };
+    const companyFilter: Prisma.CompanyWhereInput = {
+      deletedAt: null,
+      isActive: true,
+    };
 
     // Apply company scoping for COMPANY_VIEWER
     if (user?.role === 'COMPANY_VIEWER') {
@@ -21,17 +55,22 @@ export class DashboardService {
         throw new ForbiddenException('No tienes compañía asignada.');
       }
       campaignFilter.companyId = user.companyId;
-      employeeFilter.campaign = { companyId: user.companyId };
-      beneficiaryFilter.employee = { campaign: { companyId: user.companyId } };
-      giftFilter.campaign = { companyId: user.companyId };
-      supportFilter.campaign = { companyId: user.companyId };
-      selectionFilter.campaign = { companyId: user.companyId };
+      employeeFilter.campaign = { companyId: user.companyId, deletedAt: null };
+      beneficiaryFilter.employee = {
+        campaign: { companyId: user.companyId, deletedAt: null },
+        deletedAt: null,
+      };
+      giftFilter.campaign = { companyId: user.companyId, deletedAt: null };
+      supportFilter.campaign = { companyId: user.companyId, deletedAt: null };
+      selectionFilter.campaign = { companyId: user.companyId, deletedAt: null };
+      companyFilter.id = user.companyId;
     }
 
     const [
       campaignsAll,
       activeCampaigns,
       closedCampaigns,
+      draftCampaigns,
       employeesAll,
       pendingEmployees,
       inProgressEmployees,
@@ -48,6 +87,7 @@ export class DashboardService {
       resolvedSupport,
       confirmedSelections,
       cancelledSelections,
+      companiesCount,
     ] = await Promise.all([
       this.prisma.campaign.count({ where: campaignFilter }),
       this.prisma.campaign.count({ where: { ...campaignFilter, status: 'ACTIVE' } }),
@@ -57,6 +97,7 @@ export class DashboardService {
           status: { in: ['CLOSED', 'ARCHIVED', 'PAUSED'] },
         },
       }),
+      this.prisma.campaign.count({ where: { ...campaignFilter, status: 'DRAFT' } }),
       this.prisma.employee.count({ where: employeeFilter }),
       this.prisma.employee.count({ where: { ...employeeFilter, status: 'PENDING' } }),
       this.prisma.employee.count({ where: { ...employeeFilter, status: 'IN_PROGRESS' } }),
@@ -76,12 +117,15 @@ export class DashboardService {
       this.prisma.supportRequest.count({ where: { ...supportFilter, status: 'RESOLVED' } }),
       this.prisma.selection.count({ where: { ...selectionFilter, status: 'CONFIRMED' } }),
       this.prisma.selection.count({ where: { ...selectionFilter, status: 'CANCELLED' } }),
+      this.prisma.company.count({ where: companyFilter }),
     ]);
 
-    return {
+    const result = {
       campaigns: campaignsAll,
       activeCampaigns,
       closedCampaigns,
+      draftCampaigns,
+      companies: companiesCount,
       employees: employeesAll,
       pendingEmployees,
       inProgressEmployees,
@@ -99,5 +143,8 @@ export class DashboardService {
       selections: confirmedSelections,
       cancelledSelections,
     };
+
+    this.cache.set(cacheKey, result);
+    return result;
   }
 }

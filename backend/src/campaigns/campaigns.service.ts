@@ -10,6 +10,7 @@ import { CreateCampaignDto } from './dto/create-campaign.dto';
 import { UpdateCampaignDto } from './dto/update-campaign.dto';
 import { QueryCampaignsDto } from './dto/query-campaigns.dto';
 import { Prisma } from '@prisma/client';
+import { CompaniesService } from '../companies/companies.service';
 
 @Injectable()
 export class CampaignsService {
@@ -32,8 +33,8 @@ export class CampaignsService {
 
     if (search) {
       where.OR = [
-        { name: { contains: search } },
-        { slug: { contains: search } },
+        { name: { contains: search, mode: 'insensitive' } },
+        { slug: { contains: search, mode: 'insensitive' } },
       ];
     }
 
@@ -48,6 +49,7 @@ export class CampaignsService {
     return this.prisma.campaign.findMany({
       where,
       include: {
+        company: { select: { id: true, name: true, slug: true } },
         createdBy: { select: { id: true, name: true, email: true } },
         updatedBy: { select: { id: true, name: true, email: true } },
       },
@@ -61,6 +63,7 @@ export class CampaignsService {
     const campaign = await this.prisma.campaign.findUnique({
       where: { id },
       include: {
+        company: { select: { id: true, name: true, slug: true } },
         createdBy: { select: { id: true, name: true, email: true } },
         updatedBy: { select: { id: true, name: true, email: true } },
       },
@@ -86,7 +89,19 @@ export class CampaignsService {
   // ── Admin: create ────────────────────────────────────────
 
   async create(dto: CreateCampaignDto, adminUserId: number) {
-    const slug = dto.slug.trim().toLowerCase();
+    // Generate slug if not provided
+    let slug = dto.slug?.trim().toLowerCase();
+    if (!slug) {
+      // Get company to build slug from company slug + campaign name
+      const company = await this.prisma.company.findUnique({
+        where: { id: dto.companyId },
+      });
+      if (!company) {
+        throw new NotFoundException('La empresa seleccionada no existe.');
+      }
+      const campaignSlugPart = CompaniesService.generateSlug(dto.name);
+      slug = `${company.slug}-${campaignSlugPart}`;
+    }
 
     // Check slug uniqueness (including soft-deleted)
     const existing = await this.prisma.campaign.findUnique({
@@ -96,24 +111,35 @@ export class CampaignsService {
       throw new ConflictException('Ya existe una campaña con ese slug.');
     }
 
+    // Validate date window ordering
+    const startsAt = dto.startsAt ? new Date(dto.startsAt) : null;
+    const endsAt = dto.endsAt ? new Date(dto.endsAt) : null;
+    if (startsAt && endsAt && startsAt >= endsAt) {
+      throw new BadRequestException(
+        'La fecha de inicio debe ser anterior a la fecha de fin.',
+      );
+    }
+
     // TODO: AuditLog — log campaign creation when AuditLog module is implemented.
 
     return this.prisma.campaign.create({
       data: {
         name: dto.name.trim(),
         slug,
+        companyId: dto.companyId,
         welcomeText: dto.welcomeText?.trim(),
         rulesText: dto.rulesText?.trim(),
         status: dto.status || 'ACTIVE',
         logoText: dto.logoText?.trim(),
         primaryColor: dto.primaryColor?.trim(),
         logoImageUrl: dto.logoImageUrl?.trim(),
-        startsAt: dto.startsAt ? new Date(dto.startsAt) : null,
-        endsAt: dto.endsAt ? new Date(dto.endsAt) : null,
+        startsAt,
+        endsAt,
         createdById: adminUserId,
       },
       include: {
         createdBy: { select: { id: true, name: true, email: true } },
+        company: { select: { id: true, name: true, slug: true } },
       },
     });
   }
@@ -134,6 +160,25 @@ export class CampaignsService {
     if (dto.logoImageUrl !== undefined) data.logoImageUrl = dto.logoImageUrl?.trim();
     if (dto.startsAt !== undefined) data.startsAt = dto.startsAt ? new Date(dto.startsAt) : null;
     if (dto.endsAt !== undefined) data.endsAt = dto.endsAt ? new Date(dto.endsAt) : null;
+
+    // Validate date window ordering using the resulting (final) values.
+    const finalStartsAt =
+      dto.startsAt !== undefined
+        ? dto.startsAt
+          ? new Date(dto.startsAt)
+          : null
+        : campaign.startsAt;
+    const finalEndsAt =
+      dto.endsAt !== undefined
+        ? dto.endsAt
+          ? new Date(dto.endsAt)
+          : null
+        : campaign.endsAt;
+    if (finalStartsAt && finalEndsAt && finalStartsAt >= finalEndsAt) {
+      throw new BadRequestException(
+        'La fecha de inicio debe ser anterior a la fecha de fin.',
+      );
+    }
 
     if (dto.slug !== undefined) {
       const slug = dto.slug.trim().toLowerCase();

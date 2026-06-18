@@ -29,6 +29,36 @@ import { Request } from 'express';
 const ALLOWED_LOGO_TYPES = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp'];
 const MAX_LOGO_SIZE = 2 * 1024 * 1024;
 
+/**
+ * Verifies the file's real binary signature (magic bytes) matches an allowed
+ * image type. The client-supplied mimetype can be spoofed, so this is the
+ * authoritative check.
+ */
+function hasValidImageSignature(buffer: Buffer): boolean {
+  if (!buffer || buffer.length < 12) return false;
+  // PNG: 89 50 4E 47 0D 0A 1A 0A
+  if (
+    buffer[0] === 0x89 &&
+    buffer[1] === 0x50 &&
+    buffer[2] === 0x4e &&
+    buffer[3] === 0x47
+  ) {
+    return true;
+  }
+  // JPEG: FF D8 FF
+  if (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
+    return true;
+  }
+  // WebP: "RIFF" .... "WEBP"
+  if (
+    buffer.toString('ascii', 0, 4) === 'RIFF' &&
+    buffer.toString('ascii', 8, 12) === 'WEBP'
+  ) {
+    return true;
+  }
+  return false;
+}
+
 @Controller('admin/campaigns')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class CampaignsAdminController {
@@ -75,7 +105,9 @@ export class CampaignsAdminController {
 
   @Post(':id/logo')
   @Roles('SUPER_ADMIN')
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { fileSize: MAX_LOGO_SIZE } }),
+  )
   async uploadLogo(
     @Param('id', ParseIntPipe) id: number,
     @UploadedFile() file: Express.Multer.File,
@@ -90,6 +122,11 @@ export class CampaignsAdminController {
     }
     if (file.size > MAX_LOGO_SIZE) {
       throw new BadRequestException('El logo no puede superar los 2MB.');
+    }
+    if (!hasValidImageSignature(file.buffer)) {
+      throw new BadRequestException(
+        'El archivo no es una imagen válida (PNG, JPEG o WebP).',
+      );
     }
     return this.campaignsService.uploadLogo(id, file);
   }

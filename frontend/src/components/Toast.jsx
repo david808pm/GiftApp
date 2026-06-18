@@ -1,15 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 
 export default function Toast({ toasts, onRemove }) {
-  useEffect(() => {
-    if (toasts.length > 0) {
-      const timer = setTimeout(() => {
-        onRemove(toasts[0].id);
-      }, 3000);
-      return () => clearTimeout(timer);
-    }
-  }, [toasts, onRemove]);
-
   if (toasts.length === 0) return null;
 
   return (
@@ -44,6 +35,10 @@ export function useToast() {
       ? crypto.randomUUID()
       : Date.now().toString(36) + Math.random().toString(36).slice(2, 9);
     setToasts((prev) => [...prev, { id, message, type }]);
+    // Each toast auto-dismisses independently after 3s.
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 3000);
   };
 
   const removeToast = (id) => {

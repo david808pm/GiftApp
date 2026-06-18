@@ -13,7 +13,6 @@ export default function EmployeeLogin() {
   const navigate = useNavigate();
   const [campaign, setCampaign] = useState(null);
   const [campaignLoading, setCampaignLoading] = useState(USE_BACKEND);
-  const [campaignError, setCampaignError] = useState(null);
   const [documentId, setDocumentId] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -31,9 +30,6 @@ export default function EmployeeLogin() {
       .then((data) => {
         if (cancelled) return;
         setCampaign(data);
-        if (data && data.status !== 'ACTIVE') {
-          setCampaignError('closed');
-        }
         if (USE_BACKEND) setCampaignLoading(false);
       })
       .catch(() => {

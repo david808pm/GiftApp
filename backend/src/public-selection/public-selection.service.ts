@@ -8,6 +8,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { ConfirmSelectionDto } from './dto/confirm-selection.dto';
 import { Prisma } from '@prisma/client';
+import { assertCampaignWindowOpen } from '../common/utils/campaign-window';
 
 @Injectable()
 export class PublicSelectionService {
@@ -26,6 +27,11 @@ export class PublicSelectionService {
 
     if (!employee || employee.deletedAt) {
       throw new NotFoundException('Sesión inválida.');
+    }
+
+    // The token pins a campaign; reject if the employee was since moved.
+    if (employee.campaignId !== campaignId) {
+      throw new ForbiddenException('Tu sesión no corresponde a esta campaña.');
     }
 
     if (employee.status === 'BLOCKED') {
@@ -49,6 +55,8 @@ export class PublicSelectionService {
         'Esta campaña no está disponible actualmente.',
       );
     }
+
+    assertCampaignWindowOpen(campaign);
 
     return { employee, campaign };
   }
@@ -176,6 +184,7 @@ export class PublicSelectionService {
       if (campaign.status !== 'ACTIVE') {
         throw new ForbiddenException('Esta campaña no está disponible actualmente.');
       }
+      assertCampaignWindowOpen(campaign);
 
       // 2. Validate employee
       const employee = await tx.employee.findUnique({
@@ -276,18 +285,31 @@ export class PublicSelectionService {
         }
       }
 
-      // 9. Create Selection
-      const selection = await tx.selection.create({
-        data: {
-          campaignId,
-          employeeId,
-          status: 'CONFIRMED',
-          confirmedAt: new Date(),
-          employeeNameSnapshot: employee.fullName,
-          employeeDocumentIdSnapshot: employee.documentId,
-          campaignNameSnapshot: campaign.name,
-        },
-      });
+      // 9. Create Selection. The unique constraint (campaignId, employeeId) is
+      // the last line of defense against a concurrent double-confirm that both
+      // passed the existence check above; translate it into a clean 409.
+      let selection;
+      try {
+        selection = await tx.selection.create({
+          data: {
+            campaignId,
+            employeeId,
+            status: 'CONFIRMED',
+            confirmedAt: new Date(),
+            employeeNameSnapshot: employee.fullName,
+            employeeDocumentIdSnapshot: employee.documentId,
+            campaignNameSnapshot: campaign.name,
+          },
+        });
+      } catch (err) {
+        if (
+          err instanceof Prisma.PrismaClientKnownRequestError &&
+          err.code === 'P2002'
+        ) {
+          throw new ConflictException('Ya has confirmado tu selección de regalos.');
+        }
+        throw err;
+      }
 
       // 10. Create SelectionItems + StockMovements + decrement stock
       const selectionItems: any[] = [];
@@ -395,7 +417,7 @@ export class PublicSelectionService {
           items: selectionItems,
         },
       };
-    });
+    }, { timeout: 15000 });
   }
 
   // ── GET /api/public/selections/my-confirmed-selection ────

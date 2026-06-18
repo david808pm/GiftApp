@@ -1,6 +1,7 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
+import { requireEnv, MIN_SECRET_LENGTH } from '../../common/config/env';
 
 @Injectable()
 export class PublicEmployeeJwtStrategy extends PassportStrategy(
@@ -8,10 +9,7 @@ export class PublicEmployeeJwtStrategy extends PassportStrategy(
   'public-employee-jwt',
 ) {
   constructor() {
-    const secret =
-      process.env.PUBLIC_JWT_SECRET ||
-      process.env.JWT_SECRET ||
-      'fallback-public-secret';
+    const secret = requireEnv('PUBLIC_JWT_SECRET', MIN_SECRET_LENGTH);
 
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),

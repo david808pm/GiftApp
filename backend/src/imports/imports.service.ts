@@ -1,6 +1,6 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import * as XLSX from 'xlsx';
+import * as ExcelJS from 'exceljs';
 
 interface ImportRow {
   campaignSlug: string;
@@ -55,6 +55,28 @@ function normalizeGender(raw: string): string | null {
   return null;
 }
 
+/**
+ * Normalizes an ExcelJS cell value to a plain primitive, unwrapping rich text,
+ * formula results and hyperlinks so downstream string/number parsing matches
+ * the previous sheet_to_json behavior.
+ */
+function cellToValue(value: ExcelJS.CellValue): unknown {
+  if (value === null || value === undefined) return '';
+  if (value instanceof Date) return value;
+  if (typeof value === 'object') {
+    const v = value as unknown as Record<string, unknown>;
+    if (Array.isArray(v.richText)) {
+      return (v.richText as { text?: string }[])
+        .map((t) => t.text ?? '')
+        .join('');
+    }
+    if ('result' in v) return v.result ?? '';
+    if ('text' in v) return v.text ?? '';
+    return String(value);
+  }
+  return value;
+}
+
 @Injectable()
 export class ImportsService {
   constructor(private readonly prisma: PrismaService) {}
@@ -72,16 +94,36 @@ export class ImportsService {
     }
 
     // ── 1. Parse workbook ──────────────────────────────────
-    const workbook = XLSX.read(file.buffer, { type: 'buffer' });
-    const sheetName = workbook.SheetNames[0];
-    if (!sheetName) {
+    const workbook = new ExcelJS.Workbook();
+    try {
+      await workbook.xlsx.load(file.buffer as unknown as ExcelJS.Buffer);
+    } catch {
+      throw new BadRequestException(
+        'El archivo Excel no pudo leerse o está dañado.',
+      );
+    }
+    const sheet = workbook.worksheets[0];
+    if (!sheet) {
       throw new BadRequestException('El archivo Excel no contiene hojas.');
     }
-    const sheet = workbook.Sheets[sheetName];
-    const rawRows: Record<string, unknown>[] = XLSX.utils.sheet_to_json(
-      sheet,
-      { defval: '' },
-    );
+
+    // Map header row (row 1) to column indexes, then build one object per data row.
+    const headers: string[] = [];
+    sheet.getRow(1).eachCell({ includeEmpty: false }, (cell, col) => {
+      headers[col] = String(cellToValue(cell.value) ?? '').trim();
+    });
+
+    const rawRows: Record<string, unknown>[] = [];
+    sheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
+      if (rowNumber === 1) return; // skip header row
+      const obj: Record<string, unknown> = {};
+      for (let col = 1; col < headers.length; col++) {
+        const key = headers[col];
+        if (!key) continue;
+        obj[key] = cellToValue(row.getCell(col).value);
+      }
+      rawRows.push(obj);
+    });
 
     if (rawRows.length === 0) {
       return {
@@ -206,28 +248,35 @@ export class ImportsService {
     const slugs = [...new Set(validRows.map((r) => r.campaignSlug))];
     const campaigns = await this.prisma.campaign.findMany({
       where: { slug: { in: slugs }, deletedAt: null },
-      select: { id: true, slug: true },
+      select: { id: true, slug: true, status: true },
     });
-    const campaignBySlug = new Map<string, number>();
+    const campaignBySlug = new Map<string, { id: number; status: string }>();
     for (const c of campaigns) {
-      campaignBySlug.set(c.slug, c.id);
+      campaignBySlug.set(c.slug, { id: c.id, status: c.status });
     }
 
-    // Remove rows whose campaign doesn't exist
+    // Remove rows whose campaign doesn't exist or isn't open for loading.
     const rowsWithCampaign: (ImportRow & {
       excelRow: number;
       campaignId: number;
     })[] = [];
     for (const row of validRows) {
-      const cid = campaignBySlug.get(row.campaignSlug);
-      if (!cid) {
+      const c = campaignBySlug.get(row.campaignSlug);
+      if (!c) {
         errors.push({
           row: row.excelRow,
           message: `La campaña "${row.campaignSlug}" no existe o fue eliminada.`,
         });
         continue;
       }
-      rowsWithCampaign.push({ ...row, campaignId: cid });
+      if (c.status !== 'DRAFT' && c.status !== 'ACTIVE') {
+        errors.push({
+          row: row.excelRow,
+          message: `La campaña "${row.campaignSlug}" no admite cargas (estado ${c.status}).`,
+        });
+        continue;
+      }
+      rowsWithCampaign.push({ ...row, campaignId: c.id });
     }
 
     // ── 5. Group by (campaignId, employeeDocumentId) ───────
@@ -265,134 +314,150 @@ export class ImportsService {
       }
     }
 
-    // ── 6. Process each employee group ─────────────────────
-    let employeesCreated = 0;
-    let employeesUpdated = 0;
-    let beneficiariesCreated = 0;
-    let skippedRows = 0;
-    const warnings: ImportWarning[] = [];
+    // ── 6. Process each employee group (atomic write phase) ─
+    // The whole write phase runs in a single transaction so a failure on any
+    // row rolls back every prior insert/update, avoiding partial imports and
+    // duplicate beneficiaries on retry.
+    const { employeesCreated, employeesUpdated, beneficiariesCreated, skippedRows, warnings } =
+      await this.prisma.$transaction(
+        async (tx) => {
+          let employeesCreated = 0;
+          let employeesUpdated = 0;
+          let beneficiariesCreated = 0;
+          let skippedRows = 0;
+          const warnings: ImportWarning[] = [];
 
-    for (const [, group] of groups) {
-      // Find employee by campaignId + documentId
-      let employee = await this.prisma.employee.findUnique({
-        where: {
-          campaignId_documentId: {
-            campaignId: group.campaignId,
-            documentId: group.documentId,
-          },
-        },
-      });
-
-      if (employee) {
-        if (employee.status === 'CONFIRMED') {
-          // Skip all rows for this confirmed employee
-          for (const r of group.rows) {
-            warnings.push({
-              row: r.excelRow,
-              message:
-                'El empleado ya estaba confirmado y no fue actualizado.',
+          for (const [, group] of groups) {
+            // Find employee by campaignId + documentId
+            let employee = await tx.employee.findUnique({
+              where: {
+                campaignId_documentId: {
+                  campaignId: group.campaignId,
+                  documentId: group.documentId,
+                },
+              },
             });
-            skippedRows++;
-          }
-          continue;
-        }
 
-        // Update safe fields (only if different)
-        const updateData: Record<string, unknown> = {};
-        if (employee.fullName !== group.employeeFullName) {
-          updateData.fullName = group.employeeFullName;
-        }
-        if (group.employeeEmail !== undefined) {
-          const target = group.employeeEmail || null;
-          if ((employee.email ?? null) !== target) {
-            updateData.email = target;
-          }
-        }
-        if (group.employeePhone !== undefined) {
-          const target = group.employeePhone || null;
-          if ((employee.phone ?? null) !== target) {
-            updateData.phone = target;
-          }
-        }
-        if (group.shippingAddress !== undefined) {
-          const target = group.shippingAddress || null;
-          if ((employee.shippingAddress ?? null) !== target) {
-            updateData.shippingAddress = target;
-          }
-        }
-        if (group.shippingCity !== undefined) {
-          const target = group.shippingCity || null;
-          if ((employee.shippingCity ?? null) !== target) {
-            updateData.shippingCity = target;
-          }
-        }
+            if (employee) {
+              if (employee.status === 'CONFIRMED') {
+                // Skip all rows for this confirmed employee
+                for (const r of group.rows) {
+                  warnings.push({
+                    row: r.excelRow,
+                    message:
+                      'El empleado ya estaba confirmado y no fue actualizado.',
+                  });
+                  skippedRows++;
+                }
+                continue;
+              }
 
-        if (Object.keys(updateData).length > 0) {
-          await this.prisma.employee.update({
-            where: { id: employee.id },
-            data: {
-              ...updateData,
-              updatedById: adminUserId,
-            },
-          });
-          employeesUpdated++;
-        }
-      } else {
-        // Create new employee
-        employee = await this.prisma.employee.create({
-          data: {
-            campaignId: group.campaignId,
-            documentId: group.documentId,
-            fullName: group.employeeFullName,
-            email: group.employeeEmail || null,
-            phone: group.employeePhone || null,
-            shippingAddress: group.shippingAddress || null,
-            shippingCity: group.shippingCity || null,
-            status: 'PENDING',
-            createdById: adminUserId,
-          },
-        });
-        employeesCreated++;
-      }
+              // Update safe fields (only if different)
+              const updateData: Record<string, unknown> = {};
+              if (employee.fullName !== group.employeeFullName) {
+                updateData.fullName = group.employeeFullName;
+              }
+              if (group.employeeEmail !== undefined) {
+                const target = group.employeeEmail || null;
+                if ((employee.email ?? null) !== target) {
+                  updateData.email = target;
+                }
+              }
+              if (group.employeePhone !== undefined) {
+                const target = group.employeePhone || null;
+                if ((employee.phone ?? null) !== target) {
+                  updateData.phone = target;
+                }
+              }
+              if (group.shippingAddress !== undefined) {
+                const target = group.shippingAddress || null;
+                if ((employee.shippingAddress ?? null) !== target) {
+                  updateData.shippingAddress = target;
+                }
+              }
+              if (group.shippingCity !== undefined) {
+                const target = group.shippingCity || null;
+                if ((employee.shippingCity ?? null) !== target) {
+                  updateData.shippingCity = target;
+                }
+              }
 
-      // ── Process beneficiaries for this employee ──────────
-      // Fetch existing beneficiaries for duplicate check
-      const existingBeneficiaries =
-        await this.prisma.beneficiary.findMany({
-          where: { employeeId: employee.id, deletedAt: null },
-          select: { fullName: true, age: true, gender: true },
-        });
+              if (Object.keys(updateData).length > 0) {
+                await tx.employee.update({
+                  where: { id: employee.id },
+                  data: {
+                    ...updateData,
+                    updatedById: adminUserId,
+                  },
+                });
+                employeesUpdated++;
+              }
+            } else {
+              // Create new employee
+              employee = await tx.employee.create({
+                data: {
+                  campaignId: group.campaignId,
+                  documentId: group.documentId,
+                  fullName: group.employeeFullName,
+                  email: group.employeeEmail || null,
+                  phone: group.employeePhone || null,
+                  shippingAddress: group.shippingAddress || null,
+                  shippingCity: group.shippingCity || null,
+                  status: 'PENDING',
+                  createdById: adminUserId,
+                },
+              });
+              employeesCreated++;
+            }
 
-      const existingSet = new Set(
-        existingBeneficiaries.map(
-          (b) => `${b.fullName}::${b.age}::${b.gender}`,
-        ),
+            // ── Process beneficiaries for this employee ──────────
+            // Fetch existing beneficiaries for duplicate check
+            const existingBeneficiaries = await tx.beneficiary.findMany({
+              where: { employeeId: employee.id, deletedAt: null },
+              select: { fullName: true, age: true, gender: true },
+            });
+
+            const existingSet = new Set(
+              existingBeneficiaries.map(
+                (b) => `${b.fullName}::${b.age}::${b.gender}`,
+              ),
+            );
+
+            for (const row of group.rows) {
+              const dupKey = `${row.beneficiaryFullName}::${row.beneficiaryAge}::${row.beneficiaryGender}`;
+              if (existingSet.has(dupKey)) {
+                warnings.push({
+                  row: row.excelRow,
+                  message: `El beneficiario "${row.beneficiaryFullName}" (${row.beneficiaryAge}, ${row.beneficiaryGender}) ya existe para este empleado.`,
+                });
+                skippedRows++;
+                continue;
+              }
+
+              await tx.beneficiary.create({
+                data: {
+                  employeeId: employee.id,
+                  fullName: row.beneficiaryFullName,
+                  age: row.beneficiaryAge,
+                  gender: row.beneficiaryGender as 'male' | 'female',
+                  createdById: adminUserId,
+                },
+              });
+              beneficiariesCreated++;
+              existingSet.add(dupKey);
+            }
+          }
+
+          return {
+            employeesCreated,
+            employeesUpdated,
+            beneficiariesCreated,
+            skippedRows,
+            warnings,
+          };
+        },
+        { timeout: 120000, maxWait: 20000 },
       );
-
-      for (const row of group.rows) {
-        const dupKey = `${row.beneficiaryFullName}::${row.beneficiaryAge}::${row.beneficiaryGender}`;
-        if (existingSet.has(dupKey)) {
-          warnings.push({
-            row: row.excelRow,
-            message: `El beneficiario "${row.beneficiaryFullName}" (${row.beneficiaryAge}, ${row.beneficiaryGender}) ya existe para este empleado.`,
-          });
-          skippedRows++;
-          continue;
-        }
-
-        await this.prisma.beneficiary.create({
-          data: {
-            employeeId: employee.id,
-            fullName: row.beneficiaryFullName,
-            age: row.beneficiaryAge,
-            gender: row.beneficiaryGender as 'male' | 'female',
-            createdById: adminUserId,
-          },
-        });
-        beneficiariesCreated++;
-        existingSet.add(dupKey);
-      }
-    }
 
     return {
       totalRows: rawRows.length,

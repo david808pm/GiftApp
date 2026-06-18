@@ -71,7 +71,7 @@ export class SupportRequestsService {
       dto.campaignId,
     );
 
-    return this.prisma.supportRequest.create({
+    const created = await this.prisma.supportRequest.create({
       data: {
         campaignId: dto.campaignId || null,
         employeeId,
@@ -81,8 +81,12 @@ export class SupportRequestsService {
         status: 'OPEN',
         verifiedEmployee,
       },
-      include: this.supportRequestInclude,
     });
+
+    // Public response: generic acknowledgement only. Returning the persisted
+    // record (employee relation, verifiedEmployee) would let unauthenticated
+    // callers enumerate which documents exist in a campaign.
+    return { ok: true, id: created.id };
   }
 
   // ── Admin: list ──────────────────────────────────────────
@@ -121,10 +125,10 @@ export class SupportRequestsService {
 
     if (search) {
       where.OR = [
-        { documentId: { contains: search } },
-        { message: { contains: search } },
-        { employee: { fullName: { contains: search } } },
-        { employee: { documentId: { contains: search } } },
+        { documentId: { contains: search, mode: 'insensitive' } },
+        { message: { contains: search, mode: 'insensitive' } },
+        { employee: { fullName: { contains: search, mode: 'insensitive' } } },
+        { employee: { documentId: { contains: search, mode: 'insensitive' } } },
       ];
     }
 
@@ -195,25 +199,30 @@ export class SupportRequestsService {
       data.internalNote = dto.internalNote?.trim() || null;
     }
 
-    const updated = await this.prisma.supportRequest.update({
-      where: { id },
-      data,
-      include: this.supportRequestInclude,
-    });
-
-    // Create history entry
-    if (dto.status !== undefined || dto.internalNote !== undefined) {
-      await this.prisma.supportRequestHistory.create({
-        data: {
-          supportRequestId: id,
-          previousStatus: request.status,
-          newStatus: updated.status,
-          previousInternalNote: request.internalNote,
-          newInternalNote: updated.internalNote,
-          changedById: adminUserId,
-        },
+    // Update and history entry must be written atomically so the audit trail
+    // can never diverge from the actual status.
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const result = await tx.supportRequest.update({
+        where: { id },
+        data,
+        include: this.supportRequestInclude,
       });
-    }
+
+      if (dto.status !== undefined || dto.internalNote !== undefined) {
+        await tx.supportRequestHistory.create({
+          data: {
+            supportRequestId: id,
+            previousStatus: request.status,
+            newStatus: result.status,
+            previousInternalNote: request.internalNote,
+            newInternalNote: result.internalNote,
+            changedById: adminUserId,
+          },
+        });
+      }
+
+      return result;
+    });
 
     return updated;
   }

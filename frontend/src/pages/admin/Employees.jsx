@@ -71,7 +71,7 @@ export default function Employees() {
     const matchesSearch =
       e.fullName.toLowerCase().includes(search.toLowerCase()) ||
       e.documentId.includes(search) ||
-      e.email.toLowerCase().includes(search.toLowerCase()) ||
+      (e.email || '').toLowerCase().includes(search.toLowerCase()) ||
       (e.phone || '').includes(search) ||
       (e.shippingCity || '').toLowerCase().includes(search.toLowerCase()) ||
       (e.shippingAddress || '').toLowerCase().includes(search.toLowerCase());
@@ -418,7 +418,11 @@ export default function Employees() {
           >
             <option value="PENDING">Pendiente</option>
             <option value="IN_PROGRESS">En Progreso</option>
-            <option value="CONFIRMED">Confirmado</option>
+            {/* CONFIRMED is set automatically by the selection flow; only shown
+                (and kept) when the employee is already confirmed. */}
+            <option value="CONFIRMED" disabled={form.status !== 'CONFIRMED'}>
+              Confirmado
+            </option>
             <option value="BLOCKED">Bloqueado</option>
           </select>
         </div>
