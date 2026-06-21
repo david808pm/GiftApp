@@ -167,6 +167,7 @@ export default function Employees() {
   const openImportModal = () => {
     setImportFile(null);
     setImportResult(null);
+    setImportError(null);
     setShowImportModal(true);
   };
 
@@ -174,7 +175,10 @@ export default function Employees() {
     setShowImportModal(false);
     setImportFile(null);
     setImportResult(null);
+    setImportError(null);
   };
+
+  const [importError, setImportError] = useState(null);
 
   const handleImportFileChange = (e) => {
     const file = e.target.files?.[0];
@@ -185,20 +189,25 @@ export default function Employees() {
     }
     setImportFile(file || null);
     setImportResult(null);
+    setImportError(null);
   };
 
   const handleImport = async () => {
-    if (!importFile) return;
+    if (!importFile || importing) return;
 
     setImporting(true);
+    setImportResult(null);
+    setImportError(null);
     try {
       const result = await giftAppImportEmployeesBeneficiaries(importFile);
       setImportResult(result);
-      await loadData();
-      addToast('Importación completada con éxito.');
+      try {
+        await loadData();
+      } catch {
+        setImportError('La importación finalizó, pero no se pudo actualizar la lista de empleados. Recarga la página.');
+      }
     } catch (err) {
-      addToast(err.message || 'Error en la importación.', 'error');
-      setImportResult(null);
+      setImportError(err.message || 'Error en la importación.');
     } finally {
       setImporting(false);
     }
@@ -433,7 +442,11 @@ export default function Employees() {
         onClose={closeImportModal}
         title="Importar Empleados y Beneficiarios"
         footer={
-          !importResult ? (
+          importResult || importError ? (
+            <button className="btn btn-primary" onClick={closeImportModal}>
+              Cerrar
+            </button>
+          ) : (
             <>
               <button className="btn btn-outline" onClick={closeImportModal} disabled={importing}>
                 Cancelar
@@ -443,46 +456,52 @@ export default function Employees() {
                 onClick={handleImport}
                 disabled={!importFile || importing}
               >
-                {importing ? 'Importando empleados...' : 'Cargar Archivo'}
+                {importing ? 'Importando...' : 'Cargar Archivo'}
               </button>
             </>
-          ) : (
-            <button className="btn btn-primary" onClick={closeImportModal}>
-              Cerrar
-            </button>
           )
         }
       >
-        {!importResult ? (
+        {importing ? (
           <div>
-            <p style={{ marginBottom: 12, color: 'var(--gray-600)', fontSize: '0.9375rem' }}>
-              Selecciona un archivo Excel (.xlsx) con la información de empleados y beneficiarios para importar.
+            <p style={{ textAlign: 'center', color: 'var(--gray-500)', fontSize: '0.9375rem' }}>
+              Importando empleados y beneficiarios. Esto puede tardar unos segundos...
             </p>
-            <div className="form-group">
-              <label>Archivo Excel</label>
-              <input
-                type="file"
-                accept=".xlsx"
-                onChange={handleImportFileChange}
-                disabled={importing}
-                key={importFile ? importFile.name : 'empty'}
-              />
-            </div>
-            {importing && (
-              <p style={{ textAlign: 'center', marginTop: 12, color: 'var(--gray-500)' }}>
-                Importando empleados...
+          </div>
+        ) : importError ? (
+          <div>
+            <p style={{ marginBottom: 12, fontWeight: 500, color: 'var(--danger, #dc2626)' }}>
+              Error en la importación
+            </p>
+            <p style={{ color: 'var(--danger, #dc2626)', fontSize: '0.875rem', marginBottom: 12 }}>
+              {importError}
+            </p>
+            {importFile && (
+              <p style={{ fontSize: '0.8125rem', color: 'var(--gray-500)' }}>
+                Archivo: {importFile.name}
               </p>
             )}
           </div>
-        ) : (
+        ) : importResult ? (
           <div>
-            <p style={{ marginBottom: 12, fontWeight: 500, color: 'var(--success, #16a34a)' }}>
-              Importación completada
-            </p>
+            {importResult.errors && importResult.errors.length > 0 ? (
+              <p style={{ marginBottom: 12, fontWeight: 500, color: '#d97706' }}>
+                Importación completada con observaciones
+              </p>
+            ) : (
+              <p style={{ marginBottom: 12, fontWeight: 500, color: 'var(--success, #16a34a)' }}>
+                Importación completada exitosamente
+              </p>
+            )}
+            {importError && (
+              <p style={{ color: 'var(--danger, #dc2626)', fontSize: '0.875rem', marginBottom: 12, padding: '8px 12px', background: '#fef2f2', borderRadius: 4 }}>
+                {importError}
+              </p>
+            )}
             <table style={{ width: '100%', fontSize: '0.875rem' }}>
               <tbody>
                 <tr>
-                  <td style={{ padding: '4px 8px', color: 'var(--gray-500)' }}>Total de filas</td>
+                  <td style={{ padding: '4px 8px', color: 'var(--gray-500)' }}>Total de filas procesadas</td>
                   <td style={{ padding: '4px 8px', fontWeight: 600 }}>{importResult.totalRows}</td>
                 </tr>
                 <tr>
@@ -527,6 +546,38 @@ export default function Employees() {
                 )}
               </tbody>
             </table>
+          </div>
+        ) : (
+          <div>
+            <p style={{ marginBottom: 12, color: 'var(--gray-600)', fontSize: '0.9375rem' }}>
+              Selecciona un archivo Excel (.xlsx) con la información de empleados y beneficiarios para importar.
+            </p>
+            <div className="form-group">
+              <label>Archivo Excel</label>
+              <input
+                type="file"
+                accept=".xlsx"
+                onChange={handleImportFileChange}
+                disabled={importing}
+              />
+            </div>
+            {importFile && (
+              <div style={{ marginTop: 8, padding: '8px 12px', background: 'var(--gray-50)', borderRadius: 4, fontSize: '0.875rem' }}>
+                <p style={{ margin: 0, fontWeight: 500 }}>
+                  Archivo seleccionado: {importFile.name}
+                </p>
+                <p style={{ margin: '4px 0 0', color: 'var(--gray-500)', fontSize: '0.8125rem' }}>
+                  Tamaño: {(importFile.size / (1024 * 1024)).toFixed(2)} MB
+                </p>
+                <button
+                  type="button"
+                  onClick={() => { setImportFile(null); }}
+                  style={{ marginTop: 8, background: 'none', border: 'none', color: 'var(--danger, #dc2626)', cursor: 'pointer', fontSize: '0.8125rem', padding: 0 }}
+                >
+                  Quitar archivo
+                </button>
+              </div>
+            )}
           </div>
         )}
       </Modal>

@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import * as ExcelJS from 'exceljs';
 
@@ -314,20 +314,38 @@ export class ImportsService {
       }
     }
 
-    // ── 6. Process each employee group (atomic write phase) ─
-    // The whole write phase runs in a single transaction so a failure on any
-    // row rolls back every prior insert/update, avoiding partial imports and
-    // duplicate beneficiaries on retry.
-    const { employeesCreated, employeesUpdated, beneficiariesCreated, skippedRows, warnings } =
-      await this.prisma.$transaction(
-        async (tx) => {
-          let employeesCreated = 0;
-          let employeesUpdated = 0;
-          let beneficiariesCreated = 0;
-          let skippedRows = 0;
-          const warnings: ImportWarning[] = [];
+    // ── 6. Process employee groups in batches ───────────────
+    // Split groups into batches to avoid long-running transactions
+    // that exceed the Supabase pooler timeout.
+    const BATCH_SIZE = 10;
+    const BATCH_TIMEOUT = 120000;
+    const logger = new Logger('Import');
 
-          for (const [, group] of groups) {
+    const groupArray = Array.from(groups.values());
+    const batches: typeof groupArray[] = [];
+    for (let i = 0; i < groupArray.length; i += BATCH_SIZE) {
+      batches.push(groupArray.slice(i, i + BATCH_SIZE));
+    }
+
+    let employeesCreated = 0;
+    let employeesUpdated = 0;
+    let beneficiariesCreated = 0;
+    let skippedRows = 0;
+    const warnings: ImportWarning[] = [];
+
+    for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+      const batch = batches[batchIndex];
+      logger.log(`batch ${batchIndex + 1}/${batches.length} started (${batch.length} groups)`);
+
+      const batchResult = await this.prisma.$transaction(
+        async (tx) => {
+          let ec = 0;
+          let eu = 0;
+          let bc = 0;
+          let sr = 0;
+          const w: ImportWarning[] = [];
+
+          for (const group of batch) {
             // Find employee by campaignId + documentId
             let employee = await tx.employee.findUnique({
               where: {
@@ -342,12 +360,12 @@ export class ImportsService {
               if (employee.status === 'CONFIRMED') {
                 // Skip all rows for this confirmed employee
                 for (const r of group.rows) {
-                  warnings.push({
+                  w.push({
                     row: r.excelRow,
                     message:
                       'El empleado ya estaba confirmado y no fue actualizado.',
                   });
-                  skippedRows++;
+                  sr++;
                 }
                 continue;
               }
@@ -390,7 +408,7 @@ export class ImportsService {
                     updatedById: adminUserId,
                   },
                 });
-                employeesUpdated++;
+                eu++;
               }
             } else {
               // Create new employee
@@ -407,7 +425,7 @@ export class ImportsService {
                   createdById: adminUserId,
                 },
               });
-              employeesCreated++;
+              ec++;
             }
 
             // ── Process beneficiaries for this employee ──────────
@@ -426,11 +444,11 @@ export class ImportsService {
             for (const row of group.rows) {
               const dupKey = `${row.beneficiaryFullName}::${row.beneficiaryAge}::${row.beneficiaryGender}`;
               if (existingSet.has(dupKey)) {
-                warnings.push({
+                w.push({
                   row: row.excelRow,
                   message: `El beneficiario "${row.beneficiaryFullName}" (${row.beneficiaryAge}, ${row.beneficiaryGender}) ya existe para este empleado.`,
                 });
-                skippedRows++;
+                sr++;
                 continue;
               }
 
@@ -443,21 +461,24 @@ export class ImportsService {
                   createdById: adminUserId,
                 },
               });
-              beneficiariesCreated++;
+              bc++;
               existingSet.add(dupKey);
             }
           }
 
-          return {
-            employeesCreated,
-            employeesUpdated,
-            beneficiariesCreated,
-            skippedRows,
-            warnings,
-          };
+          return { ec, eu, bc, sr, w };
         },
-        { timeout: 120000, maxWait: 20000 },
+        { timeout: BATCH_TIMEOUT, maxWait: 20000 },
       );
+
+      employeesCreated += batchResult.ec;
+      employeesUpdated += batchResult.eu;
+      beneficiariesCreated += batchResult.bc;
+      skippedRows += batchResult.sr;
+      warnings.push(...batchResult.w);
+
+      logger.log(`batch ${batchIndex + 1}/${batches.length} completed`);
+    }
 
     return {
       totalRows: rawRows.length,

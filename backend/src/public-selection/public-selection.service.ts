@@ -173,7 +173,7 @@ export class PublicSelectionService {
   ) {
     const { employeeId, campaignId } = user;
 
-    return this.prisma.$transaction(async (tx) => {
+    return this.prisma.directClient.$transaction(async (tx) => {
       // 1. Validate campaign
       const campaign = await tx.campaign.findUnique({
         where: { id: campaignId },

@@ -100,7 +100,9 @@ export class CampaignsService {
         throw new NotFoundException('La empresa seleccionada no existe.');
       }
       const campaignSlugPart = CompaniesService.generateSlug(dto.name);
-      slug = `${company.slug}-${campaignSlugPart}`;
+      slug = campaignSlugPart.startsWith(`${company.slug}-`)
+        ? campaignSlugPart
+        : `${company.slug}-${campaignSlugPart}`;
     }
 
     // Check slug uniqueness (including soft-deleted)
